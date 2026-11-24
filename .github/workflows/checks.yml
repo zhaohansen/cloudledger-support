@@ -1,0 +1,59 @@
+name: Offline checks
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      EMBEDDING_BACKEND: hash
+      RETRIEVAL_BACKEND: local
+      RERANK_ENABLED: "false"
+      PYTHONUTF8: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: python -m pip install -r requirements.txt
+      - run: python -m pytest -r s
+      - name: Run offline RAG evaluation
+        run: |
+          python scripts/run_eval.py --output-name evaluation-hash-local
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          report = json.loads(Path("reports/evaluation-hash-local.json").read_text(encoding="utf-8"))
+          metrics = {item["name"]: item for item in report["metrics"]}
+          baseline = {
+              "retrieval.doc_hit@3": (8, 9),
+              "retrieval.version_conflict_detection": (1, 1),
+              "answer.citation_validity_rate": (6, 7),
+              "answer.version_mismatch_detection_rate": (1, 1),
+          }
+          for name, (minimum_hits, sample_count) in baseline.items():
+              metric = metrics[name]
+              if metric["denominator"] < sample_count or metric["numerator"] * sample_count < minimum_hits * metric["denominator"]:
+                  raise SystemExit(f"{name} below baseline {minimum_hits}/{sample_count}: {metric}")
+          PY
+      - name: Check ticket and permission regressions
+        run: |
+          python scripts/run_eval.py --suite tool --strict --output-name evaluation-tool
+          python scripts/run_eval.py --suite permission --strict --output-name evaluation-permission
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: offline-evaluation
+          path: |
+            reports/evaluation-*.json
+            reports/evaluation-*.md
+          if-no-files-found: ignore

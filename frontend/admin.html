@@ -1,0 +1,493 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>管理后台 · 云账科技</title>
+  <link rel="stylesheet" href="/assets/styles.css" />
+</head>
+<body>
+  <header class="app-header" id="app-header"></header>
+
+  <main class="page">
+    <div class="page-head">
+      <div>
+        <h1>管理后台</h1>
+        <p class="sub">知识库、用户、客服授权与租户管理。所有接口仅管理员可访问，后端逐请求校验角色。</p>
+      </div>
+      <a class="btn secondary" href="/agent">查看工单处理</a>
+    </div>
+
+    <div class="tabs" id="tabs">
+      <button class="tab active" data-tab="knowledge">知识库</button>
+      <button class="tab" data-tab="users">用户</button>
+      <button class="tab" data-tab="grants">客服授权</button>
+      <button class="tab" data-tab="tenants">租户</button>
+    </div>
+
+    <!-- 知识库 -->
+    <section id="tab-knowledge">
+      <div class="split">
+        <section class="panel">
+          <div class="panel-head"><h2>导入资料</h2></div>
+          <div class="panel-body">
+            <form id="upload-form">
+              <div class="field">
+                <label for="doc-file">文件（md / txt / 含文本 PDF，最大 5 MB）</label>
+                <input class="input" id="doc-file" type="file" accept=".md,.markdown,.txt,.pdf" required />
+              </div>
+              <div class="field">
+                <label for="doc-title">标题</label>
+                <input class="input" id="doc-title" maxlength="200" required placeholder="例如 预算编制与额度控制手册（v2.3）" />
+              </div>
+              <div class="form-grid">
+                <div class="field">
+                  <label for="doc-type">资料类型</label>
+                  <select class="select" id="doc-type">
+                    <option value="manual">操作手册</option>
+                    <option value="release">版本说明</option>
+                    <option value="faq">常见问题</option>
+                    <option value="private">客户私有资料</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <label for="doc-version">资料版本</label>
+                  <input class="input" id="doc-version" value="1.0" maxlength="32" />
+                </div>
+                <div class="field">
+                  <label for="doc-product-version">适用产品版本</label>
+                  <select class="select" id="doc-product-version">
+                    <option value="all">全版本</option>
+                    <option value="v2.2">v2.2</option>
+                    <option value="v2.3">v2.3</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <label for="doc-scope">可见范围</label>
+                  <select class="select" id="doc-scope">
+                    <option value="public">所有登录用户</option>
+                    <option value="tenant">指定租户私有</option>
+                  </select>
+                </div>
+                <div class="field full hidden" id="tenant-field">
+                  <label for="doc-tenant">私有租户</label>
+                  <select class="select" id="doc-tenant"></select>
+                </div>
+              </div>
+              <button class="btn" id="upload-btn" type="submit">上传并解析</button>
+              <div class="hint">扫描版 PDF 不支持 OCR，会明确提示失败原因；重复内容会被拒绝。</div>
+            </form>
+
+            <hr style="border:none;border-top:1px solid var(--border);margin:20px 0" />
+
+            <h3 style="font-size:13.5px;margin:0 0 10px">检索调试</h3>
+            <div class="field">
+              <label for="search-query">问题</label>
+              <input class="input" id="search-query" maxlength="500" placeholder="例如 报销草稿为什么冻结部门预算" />
+            </div>
+            <div class="form-grid">
+              <div class="field">
+                <label for="search-version">产品版本</label>
+                <select class="select" id="search-version">
+                  <option value="">自动</option>
+                  <option value="v2.2">v2.2</option>
+                  <option value="v2.3">v2.3</option>
+                </select>
+              </div>
+              <div class="field" style="display:flex;align-items:flex-end">
+                <button class="btn secondary" id="search-btn" type="button" style="width:100%">执行检索</button>
+              </div>
+            </div>
+            <div class="search-result" id="search-result"></div>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head">
+            <h2>资料列表</h2>
+            <select class="select" id="doc-status-filter" style="width:auto">
+              <option value="">全部状态</option>
+              <option value="ready">已就绪</option>
+              <option value="processing">解析中</option>
+              <option value="failed">失败</option>
+            </select>
+          </div>
+          <div class="panel-body">
+            <div id="doc-list"><div class="empty"><span class="spinner"></span> 加载中…</div></div>
+          </div>
+        </section>
+      </div>
+    </section>
+
+    <!-- 用户 -->
+    <section id="tab-users" class="hidden">
+      <div class="split">
+        <section class="panel">
+          <div class="panel-head"><h2>新建用户</h2></div>
+          <div class="panel-body">
+            <form id="user-form">
+              <div class="form-grid">
+                <div class="field"><label for="new-username">用户名</label><input class="input" id="new-username" required minlength="2" maxlength="64" /></div>
+                <div class="field"><label for="new-password">初始密码</label><input class="input" id="new-password" type="password" required minlength="6" maxlength="128" /></div>
+                <div class="field"><label for="new-display">显示名称</label><input class="input" id="new-display" maxlength="64" /></div>
+                <div class="field"><label for="new-email">邮箱</label><input class="input" id="new-email" maxlength="128" /></div>
+                <div class="field"><label for="new-role">角色</label>
+                  <select class="select" id="new-role">
+                    <option value="customer">客户</option>
+                    <option value="agent">客服</option>
+                    <option value="admin">管理员</option>
+                  </select>
+                </div>
+                <div class="field"><label for="new-tenant">所属租户</label><select class="select" id="new-tenant"></select></div>
+              </div>
+              <button class="btn" type="submit">创建用户</button>
+              <div class="hint">客服创建后，还需要在「客服授权」中分配可处理的企业。</div>
+            </form>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head"><h2>用户列表</h2><span class="muted small" id="user-count"></span></div>
+          <div class="panel-body">
+            <div id="user-list"><div class="empty"><span class="spinner"></span> 加载中…</div></div>
+          </div>
+        </section>
+      </div>
+    </section>
+
+    <!-- 客服授权 -->
+    <section id="tab-grants" class="hidden">
+      <div class="split">
+        <section class="panel">
+          <div class="panel-head"><h2>新增授权</h2></div>
+          <div class="panel-body">
+            <form id="grant-form">
+              <div class="field"><label for="grant-agent">客服</label><select class="select" id="grant-agent"></select></div>
+              <div class="field"><label for="grant-tenant">可处理租户</label><select class="select" id="grant-tenant"></select></div>
+              <button class="btn" type="submit">添加授权</button>
+              <div class="hint">客服只能查看/处理被授权租户的工单，并检索该租户的私有资料。</div>
+            </form>
+          </div>
+        </section>
+        <section class="panel">
+          <div class="panel-head"><h2>授权列表</h2></div>
+          <div class="panel-body"><div id="grant-list"><div class="empty"><span class="spinner"></span> 加载中…</div></div></div>
+        </section>
+      </div>
+    </section>
+
+    <!-- 租户 -->
+    <section id="tab-tenants" class="hidden">
+      <section class="panel">
+        <div class="panel-head"><h2>租户列表</h2><span class="muted small">平台方租户与客户企业分开展示</span></div>
+        <div class="panel-body"><div id="tenant-list"><div class="empty"><span class="spinner"></span> 加载中…</div></div></div>
+      </section>
+    </section>
+  </main>
+
+  <script src="/assets/common.js"></script>
+  <script>
+    // 管理后台：知识库上传/删除/检索调试、用户管理、客服授权、租户查看。
+    const user = requireAuth(["admin"]);
+    if (user) renderNav("admin", user);
+
+    const state = { tenants: [], users: [], grants: [] };
+
+    // ── Tab 切换 ─────────────────────────────────────────────
+    el("tabs").addEventListener("click", function (event) {
+      const tab = event.target.closest(".tab");
+      if (!tab) return;
+      document.querySelectorAll(".tab").forEach((item) => item.classList.toggle("active", item === tab));
+      ["knowledge", "users", "grants", "tenants"].forEach(function (key) {
+        el("tab-" + key).classList.toggle("hidden", key !== tab.dataset.tab);
+      });
+    });
+
+    function tenantOptions(selectedId, includePlatform) {
+      return state.tenants
+        .filter((tenant) => includePlatform || !tenant.is_platform)
+        .map(function (tenant) {
+          return '<option value="' + escapeHtml(tenant.id) + '"' +
+            (tenant.id === selectedId ? " selected" : "") + ">" + escapeHtml(tenant.name) +
+            (tenant.is_platform ? "（平台）" : "") + "</option>";
+        }).join("");
+    }
+
+    async function loadTenants() {
+      const data = await api("/admin/tenants");
+      state.tenants = data.items || [];
+      el("doc-tenant").innerHTML = tenantOptions();
+      el("new-tenant").innerHTML = tenantOptions(undefined, true);
+      el("grant-tenant").innerHTML = tenantOptions();
+      el("tenant-list").innerHTML =
+        '<table class="table"><thead><tr><th>企业名称</th><th>编码</th><th>类型</th><th>租户 ID</th></tr></thead><tbody>' +
+        state.tenants.map(function (tenant) {
+          return "<tr><td>" + escapeHtml(tenant.name) + "</td><td class=\"mono\">" + escapeHtml(tenant.code) +
+            "</td><td>" + (tenant.is_platform ? "平台方" : "客户企业") + "</td><td class=\"mono small\">" +
+            escapeHtml(tenant.id) + "</td></tr>";
+        }).join("") + "</tbody></table>";
+    }
+
+    // ── 知识库 ───────────────────────────────────────────────
+    el("doc-scope").addEventListener("change", function () {
+      el("tenant-field").classList.toggle("hidden", this.value !== "tenant");
+    });
+
+    const DOC_TYPE_LABELS = { manual: "操作手册", release: "版本说明", faq: "常见问题", private: "私有资料" };
+
+    function documentHtml(doc) {
+      const statusClass = doc.status === "ready" ? "closed" : (doc.status === "failed" ? "pending" : "processing");
+      return '<div class="ticket-item" style="cursor:default">' +
+        '<div class="row1"><span class="badge ' + statusClass + '">' + escapeHtml(doc.status) + "</span>" +
+          '<span class="muted small">' + escapeHtml(DOC_TYPE_LABELS[doc.doc_type] || doc.doc_type) + "</span>" +
+          '<span class="badge role">' + escapeHtml(doc.product_version) + "</span>" +
+          '<span class="badge role">' + (doc.access_scope === "tenant" ? "租户私有" : "公共") + "</span>" +
+          '<span class="cite-score">' + escapeHtml(doc.chunk_count) + " 块</span></div>" +
+        '<div class="title">' + escapeHtml(doc.title) + "</div>" +
+        '<div class="row2"><span class="mono">' + escapeHtml(doc.filename) + "</span>" +
+          "<span>· 资料版本 " + escapeHtml(doc.version) + "</span>" +
+          "<span>· " + escapeHtml(fmtTime(doc.updated_at)) + "</span>" +
+          '<button class="btn ghost sm" data-delete-doc="' + escapeHtml(doc.id) + '">删除</button></div>' +
+        (doc.error_message ? '<div class="alert error" style="margin-top:8px">' + escapeHtml(doc.error_message) + "</div>" : "") +
+      "</div>";
+    }
+
+    async function loadDocuments() {
+      const status = el("doc-status-filter").value;
+      el("doc-list").innerHTML = '<div class="empty"><span class="spinner"></span> 加载中…</div>';
+      try {
+        const data = await api("/knowledge/documents" + (status ? "?status_filter=" + status : ""));
+        const items = data.items || [];
+        el("doc-list").innerHTML = items.length
+          ? '<div class="ticket-list" style="max-height:none">' + items.map(documentHtml).join("") + "</div>"
+          : '<div class="empty">暂无资料</div>';
+      } catch (err) {
+        el("doc-list").innerHTML = '<div class="alert error">' + escapeHtml(err.message) + "</div>";
+      }
+    }
+
+    el("doc-status-filter").addEventListener("change", loadDocuments);
+
+    el("upload-form").addEventListener("submit", async function (event) {
+      event.preventDefault();
+      const fileInput = el("doc-file");
+      if (!fileInput.files.length) return toast("请选择文件", "error");
+      const formData = new FormData();
+      formData.append("file", fileInput.files[0]);
+      formData.append("title", el("doc-title").value.trim());
+      formData.append("doc_type", el("doc-type").value);
+      formData.append("version", el("doc-version").value.trim() || "1.0");
+      formData.append("product_version", el("doc-product-version").value);
+      formData.append("access_scope", el("doc-scope").value);
+      if (el("doc-scope").value === "tenant") formData.append("tenant_id", el("doc-tenant").value);
+
+      const btn = el("upload-btn");
+      btn.disabled = true;
+      btn.textContent = "解析中…";
+      try {
+        const doc = await api("/knowledge/documents", { method: "POST", body: formData });
+        if (doc.status === "failed") {
+          toast("导入失败：" + (doc.error_message || "解析失败"), "error");
+        } else {
+          toast("导入成功，共 " + doc.chunk_count + " 个分块", "success");
+        }
+        event.target.reset();
+        el("tenant-field").classList.add("hidden");
+        await loadDocuments();
+      } catch (err) {
+        toast(err.message, "error");
+      } finally {
+        btn.disabled = false;
+        btn.textContent = "上传并解析";
+      }
+    });
+
+    el("doc-list").addEventListener("click", async function (event) {
+      const btn = event.target.closest("[data-delete-doc]");
+      if (!btn) return;
+      if (!confirm("删除资料及其全部分块？删除后旧内容将无法再被检索。")) return;
+      btn.disabled = true;
+      try {
+        await api("/knowledge/documents/" + btn.dataset.deleteDoc, { method: "DELETE" });
+        toast("资料已删除", "success");
+        await loadDocuments();
+      } catch (err) {
+        toast(err.message, "error");
+      } finally {
+        btn.disabled = false;
+      }
+    });
+
+    el("search-btn").addEventListener("click", async function () {
+      const query = el("search-query").value.trim();
+      if (!query) return toast("请输入检索问题", "error");
+      const box = el("search-result");
+      box.innerHTML = '<div class="loading"><span class="spinner"></span> 检索中…</div>';
+      try {
+        const data = await api("/knowledge/search", {
+          method: "POST",
+          body: { query: query, product_version: el("search-version").value || null },
+        });
+        let head = "命中 " + (data.items || []).length + " 条";
+        if (data.reason === "no_match") head = "未达到相似度阈值（不返回无依据内容）";
+        if (data.reason === "no_version_match") head = "指定版本没有匹配资料";
+        if (data.version_conflict) head += " · 命中多个版本，请提示用户确认版本";
+        box.innerHTML = '<div class="alert info">' + escapeHtml(head) +
+          (data.matched_versions && data.matched_versions.length
+            ? "（匹配版本：" + escapeHtml(data.matched_versions.join(" / ")) + "）" : "") + "</div>" +
+          (data.items || []).map(function (item) {
+            return '<div class="result-item"><div class="head"><b>[' + escapeHtml(item.index) + "] " +
+              escapeHtml(item.title) + "</b><span class=\"muted\">" + escapeHtml(item.section || "") + "</span>" +
+              '<span class="badge role">' + escapeHtml(item.product_version) + "</span>" +
+              '<span class="scores">' + Number(item.score).toFixed(3) +
+              " (dense " + Number(item.dense_score).toFixed(3) + " / lex " + Number(item.lexical_score).toFixed(3) + ")</span></div>" +
+              '<div class="body">' + escapeHtml(item.content || item.snippet || "") + "</div></div>";
+          }).join("");
+      } catch (err) {
+        box.innerHTML = '<div class="alert error">' + escapeHtml(err.message) + "</div>";
+      }
+    });
+
+    // ── 用户 ─────────────────────────────────────────────────
+    function userRow(item) {
+      return "<tr><td>" + escapeHtml(item.username) + '<div class="muted small">' + escapeHtml(item.display_name || "-") + "</div></td>" +
+        "<td>" + escapeHtml(ROLE_LABELS[item.role] || item.role) + "</td>" +
+        "<td>" + escapeHtml(item.tenant_name || "-") + "</td>" +
+        "<td>" + (item.is_active ? '<span class="badge closed">启用</span>' : '<span class="badge pending">已禁用</span>') + "</td>" +
+        '<td class="actions">' +
+          '<button class="btn ghost sm" data-toggle-user="' + escapeHtml(item.id) + '" data-active="' + item.is_active + '">' +
+            (item.is_active ? "禁用" : "启用") + "</button>" +
+          '<button class="btn ghost sm" data-reset-user="' + escapeHtml(item.id) + '" data-username="' + escapeHtml(item.username) + '">重置密码</button>' +
+        "</td></tr>";
+    }
+
+    async function loadUsers() {
+      el("user-list").innerHTML = '<div class="empty"><span class="spinner"></span> 加载中…</div>';
+      try {
+        const data = await api("/admin/users");
+        state.users = data.items || [];
+        el("user-count").textContent = state.users.length + " 人";
+        el("user-list").innerHTML =
+          '<table class="table"><thead><tr><th>用户</th><th>角色</th><th>租户</th><th>状态</th><th>操作</th></tr></thead><tbody>' +
+          state.users.map(userRow).join("") + "</tbody></table>";
+        el("grant-agent").innerHTML = state.users
+          .filter((item) => item.role === "agent")
+          .map(function (item) {
+            return '<option value="' + escapeHtml(item.id) + '">' + escapeHtml(item.username) +
+              "（" + escapeHtml(item.display_name || "-") + "）</option>";
+          }).join("");
+      } catch (err) {
+        el("user-list").innerHTML = '<div class="alert error">' + escapeHtml(err.message) + "</div>";
+      }
+    }
+
+    el("user-form").addEventListener("submit", async function (event) {
+      event.preventDefault();
+      try {
+        await api("/admin/users", {
+          method: "POST",
+          body: {
+            username: el("new-username").value.trim(),
+            password: el("new-password").value,
+            display_name: el("new-display").value.trim(),
+            email: el("new-email").value.trim(),
+            role: el("new-role").value,
+            tenant_id: el("new-tenant").value,
+          },
+        });
+        toast("用户已创建", "success");
+        event.target.reset();
+        await Promise.all([loadUsers(), loadTenants()]);
+      } catch (err) {
+        toast(err.message, "error");
+      }
+    });
+
+    el("user-list").addEventListener("click", async function (event) {
+      const toggle = event.target.closest("[data-toggle-user]");
+      const reset = event.target.closest("[data-reset-user]");
+      if (toggle) {
+        const nextActive = toggle.dataset.active !== "true";
+        if (!confirm((nextActive ? "启用" : "禁用") + "该账号？禁用后其现有 Token 立即失效。")) return;
+        toggle.disabled = true;
+        try {
+          await api("/admin/users/" + toggle.dataset.toggleUser, { method: "PATCH", body: { is_active: nextActive } });
+          toast("账号状态已更新", "success");
+          await loadUsers();
+        } catch (err) {
+          toast(err.message, "error");
+        } finally {
+          toggle.disabled = false;
+        }
+      }
+      if (reset) {
+        const password = prompt("为 " + reset.dataset.username + " 设置新密码（至少 6 位）：");
+        if (!password) return;
+        try {
+          await api("/admin/users/" + reset.dataset.resetUser, { method: "PATCH", body: { password: password } });
+          toast("密码已重置", "success");
+        } catch (err) {
+          toast(err.message, "error");
+        }
+      }
+    });
+
+    // ── 客服授权 ─────────────────────────────────────────────
+    async function loadGrants() {
+      el("grant-list").innerHTML = '<div class="empty"><span class="spinner"></span> 加载中…</div>';
+      try {
+        const data = await api("/admin/agent-grants");
+        state.grants = data.items || [];
+        el("grant-list").innerHTML = state.grants.length
+          ? '<table class="table"><thead><tr><th>客服</th><th>可处理租户</th><th>操作</th></tr></thead><tbody>' +
+            state.grants.map(function (grant) {
+              return "<tr><td>" + escapeHtml(grant.agent_username) + "</td><td>" + escapeHtml(grant.tenant_name) + "</td>" +
+                '<td><button class="btn ghost sm" data-delete-grant="' + escapeHtml(grant.id) + '">移除</button></td></tr>';
+            }).join("") + "</tbody></table>"
+          : '<div class="empty">尚未配置客服授权</div>';
+      } catch (err) {
+        el("grant-list").innerHTML = '<div class="alert error">' + escapeHtml(err.message) + "</div>";
+      }
+    }
+
+    el("grant-form").addEventListener("submit", async function (event) {
+      event.preventDefault();
+      try {
+        await api("/admin/agent-grants", {
+          method: "POST",
+          body: { agent_user_id: el("grant-agent").value, tenant_id: el("grant-tenant").value },
+        });
+        toast("授权已添加", "success");
+        await loadGrants();
+      } catch (err) {
+        toast(err.message, "error");
+      }
+    });
+
+    el("grant-list").addEventListener("click", async function (event) {
+      const btn = event.target.closest("[data-delete-grant]");
+      if (!btn) return;
+      if (!confirm("移除该客服对此租户的授权？移除后立即无法查看该租户工单。")) return;
+      btn.disabled = true;
+      try {
+        await api("/admin/agent-grants/" + btn.dataset.deleteGrant, { method: "DELETE" });
+        toast("授权已移除", "success");
+        await loadGrants();
+      } catch (err) {
+        toast(err.message, "error");
+      } finally {
+        btn.disabled = false;
+      }
+    });
+
+    (async function init() {
+      try {
+        await loadTenants();
+        await Promise.all([loadDocuments(), loadUsers(), loadGrants()]);
+      } catch (err) {
+        toast(err.message, "error");
+      }
+    })();
+  </script>
+</body>
+</html>

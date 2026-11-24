@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.coverage
+htmlcov/
+.idea/
+
+# 本地数据与密钥
+data/
+.env
+*.db
+*.sqlite3
+
+# 报告与临时文件
+reports/*.json
+reports/*.md
+!reports/.gitkeep
+*.log
+.DS_Store
+Thumbs.db
+
+# 本地个人复习与简历手卡（不随公开工程仓库发布）
+docs/interview.md
+docs/resume.md
+docs/learning-guide.md
+docs/reuse-mapping.md

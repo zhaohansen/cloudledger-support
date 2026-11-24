@@ -1,0 +1,663 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>智能问答 · 云账科技</title>
+  <link rel="stylesheet" href="/assets/styles.css" />
+</head>
+<body>
+  <header class="app-header" id="app-header"></header>
+
+  <main class="chat-layout">
+    <aside class="session-panel">
+      <div class="session-head">
+        <button class="btn secondary" id="new-session-btn" style="width: 100%">＋ 新建会话</button>
+      </div>
+      <div class="session-list" id="session-list">
+        <div class="empty small">暂无会话</div>
+      </div>
+    </aside>
+
+    <section class="chat-panel">
+      <div class="chat-toolbar">
+        <div class="chat-title" id="chat-title">智能问答</div>
+        <select class="select version-select" id="version-select" title="限定产品版本检索">
+          <option value="">版本：自动</option>
+          <option value="v2.2">v2.2</option>
+          <option value="v2.3">v2.3</option>
+        </select>
+        <span class="loading hidden" id="sending-flag"><span class="spinner"></span><span id="sending-text">正在生成回答</span></span>
+      </div>
+
+      <button class="btn secondary hidden" id="older-messages" type="button">加载更早的消息</button>
+      <div class="messages" id="messages">
+        <div class="empty"><span class="spinner"></span> 加载中…</div>
+      </div>
+
+      <form class="composer" id="composer">
+        <div class="composer-box">
+          <textarea id="message-input" rows="2" maxlength="2000" placeholder="描述你的问题；需要报障时请说明版本、操作步骤和报错信息，Enter 发送，Shift+Enter 换行"></textarea>
+          <button class="btn" id="send-btn" type="submit">发送</button>
+          <button class="btn secondary hidden" id="stop-btn" type="button">停止</button>
+        </div>
+        <div class="hint">回答只依据当前账号有权访问的资料；证据不足时会说明并追问，不会编造来源。</div>
+      </form>
+    </section>
+  </main>
+
+  <script src="/assets/common.js"></script>
+  <script>
+    // 聊天页：会话列表、历史消息、发送消息、引用折叠、工单草稿编辑与确认。
+    const user = requireAuth();
+    if (user) {
+      renderNav("chat", user);
+    }
+
+    const state = {
+      sessions: [],
+      currentId: null,
+      sending: false,
+      loadingMessages: false,
+      historyRequest: 0,
+      historyBefore: null,
+      abortController: null,
+    };
+    const pendingRetries = new Map();
+
+    const messagesEl = el("messages");
+    const sessionListEl = el("session-list");
+    const inputEl = el("message-input");
+    const sendBtn = el("send-btn");
+    const stopBtn = el("stop-btn");
+    const sendingFlag = el("sending-flag");
+    const sendingText = el("sending-text");
+    const olderMessagesBtn = el("older-messages");
+
+    const STAGE_LABELS = {
+      retrieving: "正在检索资料…",
+      generating: "正在生成回答…",
+      agent: "正在处理工单流程…",
+    };
+
+    function setSending(value, label) {
+      state.sending = value;
+      sendBtn.disabled = value;
+      sendBtn.classList.toggle("hidden", value);
+      stopBtn.classList.toggle("hidden", !value);
+      sendingFlag.classList.toggle("hidden", !value);
+      if (label) sendingText.textContent = label;
+    }
+
+    stopBtn.addEventListener("click", function () {
+      if (state.abortController) {
+        state.abortController.abort();
+      }
+    });
+
+    function isNearBottom() {
+      return messagesEl.scrollHeight - messagesEl.scrollTop - messagesEl.clientHeight < 120;
+    }
+
+    function scrollToBottom() {
+      messagesEl.scrollTop = messagesEl.scrollHeight;
+    }
+
+    function emptyState(html) {
+      messagesEl.innerHTML = '<div class="empty">' + html + "</div>";
+    }
+
+    // 空会话欢迎页：示例问题卡片，点击直接发送
+    const SUGGESTIONS = [
+      { tag: "预算控制", text: "v2.2 报销单保存草稿后为什么部门可用预算被冻结？" },
+      { tag: "数电发票", text: "数电发票提示已被报销单占用怎么处理？" },
+      { tag: "反审核", text: "差旅报销单经财务复核后还能退回修改吗？" },
+      { tag: "受控建单", text: "转人工。v2.3 报销超预算生成追加单后额度仍未生效，已刷新页面" },
+    ];
+
+    function welcomeState(title) {
+      messagesEl.innerHTML =
+        '<div class="suggest-wrap">' +
+          '<div class="suggest-icon">AI</div>' +
+          "<h2>" + escapeHtml(title || "有什么可以帮你？") + "</h2>" +
+          "<p>基于产品资料回答，附带可追溯的引用；需要时可直接生成工单草稿。</p>" +
+          '<div class="suggest-grid">' +
+            SUGGESTIONS.map(function (item) {
+              return '<button type="button" class="suggest-chip" data-suggest="' + escapeHtml(item.text) + '">' +
+                "<span>" + escapeHtml(item.tag) + "</span>" + escapeHtml(item.text) + "</button>";
+            }).join("") +
+          "</div>" +
+        "</div>";
+    }
+
+    messagesEl.addEventListener("click", function (event) {
+      const chip = event.target.closest("[data-suggest]");
+      if (!chip || state.sending) return;
+      inputEl.value = chip.dataset.suggest;
+      autoGrow();
+      sendMessage();
+    });
+
+    // 输入框随内容自动增高（上限由 CSS max-height 控制）
+    function autoGrow() {
+      inputEl.style.height = "auto";
+      inputEl.style.height = inputEl.scrollHeight + "px";
+    }
+    inputEl.addEventListener("input", autoGrow);
+
+    async function loadSessions() {
+      const data = await api("/chat/sessions");
+      state.sessions = data.items || [];
+      renderSessions();
+    }
+
+    function renderSessions() {
+      if (!state.sessions.length) {
+        sessionListEl.innerHTML = '<div class="empty small">暂无会话，点击上方新建</div>';
+        return;
+      }
+      sessionListEl.innerHTML = state.sessions.map(function (session) {
+        return '<button class="session-item ' + (session.id === state.currentId ? "active" : "") +
+          '" data-id="' + escapeHtml(session.id) + '">' +
+          '<span class="title">' + escapeHtml(session.title || "新会话") + "</span>" +
+          '<span class="time">' + escapeHtml(fmtTime(session.updated_at)) + "</span></button>";
+      }).join("");
+    }
+
+    sessionListEl.addEventListener("click", function (event) {
+      const item = event.target.closest(".session-item");
+      if (!item || state.sending) return;
+      const session = state.sessions.find((s) => s.id === item.dataset.id);
+      if (!session) return;
+      state.currentId = session.id;
+      el("chat-title").textContent = session.title || "智能问答";
+      renderSessions();
+      loadMessages();
+    });
+
+    async function createSession() {
+      const data = await api("/chat/sessions", { method: "POST", body: { title: "新会话" } });
+      state.currentId = data.id;
+      state.historyRequest += 1;
+      state.historyBefore = null;
+      state.loadingMessages = false;
+      olderMessagesBtn.classList.add("hidden");
+      state.sessions.unshift(data);
+      renderSessions();
+      el("chat-title").textContent = data.title;
+      welcomeState("新会话已创建，有什么可以帮你？");
+      inputEl.focus();
+    }
+
+    el("new-session-btn").addEventListener("click", function () {
+      if (state.sending) return;
+      createSession().catch((err) => toast(err.message, "error"));
+    });
+
+    // 轻量安全 Markdown 渲染：先转义 HTML，再处理代码块、行内代码、加粗与引用角标 [1]
+    function renderMarkdown(text) {
+      let html = escapeHtml(text || "");
+      const codeBlocks = [];
+      html = html.replace(/```[a-zA-Z0-9_-]*\n?([\s\S]*?)```/g, function (_m, code) {
+        const idx = codeBlocks.length;
+        codeBlocks.push("<pre><code>" + code.replace(/\n$/, "") + "</code></pre>");
+        return "\u0000CB" + idx + "\u0000";
+      });
+      const inlineCodes = [];
+      html = html.replace(/`([^`\n]+)`/g, function (_m, code) {
+        const idx = inlineCodes.length;
+        inlineCodes.push("<code>" + code + "</code>");
+        return "\u0000IC" + idx + "\u0000";
+      });
+      html = html.replace(/\*\*([^*\n]+)\*\*/g, "<strong>$1</strong>");
+      html = html.replace(/\[(\d{1,2})\]/g, '<button type="button" class="cite-ref" data-cite-index="$1" title="查看引用 [$1]">[$1]</button>');
+      html = html.replace(/\u0000IC(\d+)\u0000/g, function (_m, i) { return inlineCodes[Number(i)]; });
+      html = html.replace(/\u0000CB(\d+)\u0000/g, function (_m, i) { return codeBlocks[Number(i)]; });
+      return html;
+    }
+
+    function citationHtml(citation) {
+      return '<div class="citation" data-cite-index="' + escapeHtml(citation.index) + '">' +
+        '<div class="cite-head"><span class="cite-title">[' + escapeHtml(citation.index) + "] " +
+          escapeHtml(citation.title || "未命名资料") + "</span>" +
+          (citation.section ? '<span class="muted">· ' + escapeHtml(citation.section) + "</span>" : "") +
+          '<span class="badge role">' + escapeHtml(citation.product_version || "all") + "</span>" +
+          '<span class="cite-score">' + Number(citation.score || 0).toFixed(3) + "</span></div>" +
+        '<div class="cite-body">' + escapeHtml(citation.snippet || "") + "</div>" +
+      "</div>";
+    }
+
+    function citationsHtml(citations) {
+      if (!citations || !citations.length) return "";
+      return '<details class="citations"><summary>查看引用资料（' + citations.length + " 条）</summary>" +
+        '<div class="citation-list">' + citations.map(citationHtml).join("") + "</div></details>";
+    }
+
+    function ticketResultHtml(ticket) {
+      if (!ticket) return "";
+      return '<div class="ticket-result">' +
+        '<div>工单已创建：<span class="no">' + escapeHtml(ticket.ticket_no || "") + "</span> " +
+        statusBadge(ticket.status || "pending") + "</div>" +
+        '<div class="small muted" style="margin-top:4px">' + escapeHtml(ticket.title || "") + "</div>" +
+        '<div style="margin-top:8px"><a class="btn secondary sm" href="/tickets">前往我的工单查看</a></div>' +
+      "</div>";
+    }
+
+    function draftHtml(draft) {
+      if (!draft || draft.status !== "draft") return "";
+      const categories = Object.keys(CATEGORY_LABELS).map(function (key) {
+        return '<option value="' + key + '"' + (draft.category === key ? " selected" : "") + ">" +
+          escapeHtml(CATEGORY_LABELS[key]) + "</option>";
+      }).join("");
+      const priorities = Object.keys(PRIORITY_LABELS).map(function (key) {
+        return '<option value="' + key + '"' + (draft.priority === key ? " selected" : "") + ">" +
+          escapeHtml(PRIORITY_LABELS[key]) + "</option>";
+      }).join("");
+      return '<div class="draft-card" id="draft-' + escapeHtml(draft.id) + '" data-version="' + Number(draft.version || 1) + '">' +
+        '<div class="draft-head"><strong>工单草稿（尚未创建）</strong><span class="badge role">待确认</span></div>' +
+        '<div class="grid">' +
+          '<div class="full field"><label>标题</label><input class="input" data-field="title" value="' + escapeHtml(draft.title) + '" maxlength="200" /></div>' +
+          '<div class="field"><label>产品版本</label><input class="input" data-field="product_version" value="' + escapeHtml(draft.product_version) + '" maxlength="32" /></div>' +
+          '<div class="field"><label>问题分类</label><select class="select" data-field="category">' + categories + "</select></div>" +
+          '<div class="field"><label>优先级</label><select class="select" data-field="priority">' + priorities + "</select></div>" +
+          '<div class="full field"><label>问题描述</label><textarea class="textarea" data-field="description" maxlength="2000">' + escapeHtml(draft.description) + "</textarea></div>" +
+          '<div class="field"><label>报错信息</label><textarea class="textarea" data-field="error_message" maxlength="2000">' + escapeHtml(draft.error_message) + "</textarea></div>" +
+          '<div class="field"><label>已尝试的步骤</label><textarea class="textarea" data-field="tried_steps" maxlength="2000">' + escapeHtml(draft.tried_steps) + "</textarea></div>" +
+        "</div>" +
+        '<div class="actions">' +
+          '<button class="btn" data-action="confirm">确认并创建工单</button>' +
+          '<button class="btn secondary" data-action="save">仅保存修改</button>' +
+          '<button class="btn ghost" data-action="later">暂不创建</button>' +
+        "</div>" +
+        '<div class="draft-msg muted"></div>' +
+      "</div>";
+    }
+
+    function assistantExtras(message) {
+      const meta = message.meta || {};
+      return citationsHtml(message.citations) + draftHtml(meta.draft) + ticketResultHtml(meta.ticket);
+    }
+
+    function metaBadges(meta) {
+      const badges = [];
+      if (meta.answer_mode === "extractive") badges.push("摘录式回答");
+      if (meta.answer_mode === "llm_uncited") badges.push("未通过引用校验");
+      if (meta.stream_status === "partial" || meta.partial) badges.push("回答未完成");
+      if (Array.isArray(meta.citation_warnings) && meta.citation_warnings.length) {
+        badges.push("部分引用已剔除");
+      }
+      return badges;
+    }
+
+    function metaLineHtml(createdAt, meta, isUser) {
+      const badges = isUser ? [] : metaBadges(meta || {});
+      return escapeHtml(fmtTime(createdAt)) +
+        (badges.length ? " · " + escapeHtml(badges.join(" · ")) : "") +
+        (isUser ? "" : ' <button type="button" class="copy-btn" data-copy>复制</button>');
+    }
+
+    function renderMessage(message, target = messagesEl) {
+      const isUser = message.role === "user";
+      const meta = message.meta || {};
+      const wrap = document.createElement("div");
+      wrap.className = "message " + (isUser ? "user" : "assistant");
+      if (!isUser) wrap.dataset.rawContent = message.content || "";
+      wrap.innerHTML =
+        '<div class="avatar">' + (isUser ? "我" : "AI") + "</div>" +
+        '<div class="bubble-wrap">' +
+          '<div class="bubble">' + (isUser ? escapeHtml(message.content) : renderMarkdown(message.content)) + "</div>" +
+          '<div class="meta-line">' + metaLineHtml(message.created_at, meta, isUser) + "</div>" +
+          (isUser ? "" : '<div class="extras">' + assistantExtras(message) + "</div>") +
+        "</div>";
+      target.appendChild(wrap);
+      return wrap;
+    }
+
+    async function loadMessages({ older = false } = {}) {
+      const sessionId = state.currentId;
+      const before = older ? state.historyBefore : null;
+      if (!sessionId || (older && (!before || state.loadingMessages || state.sending))) return;
+      const request = ++state.historyRequest;
+      state.loadingMessages = true;
+      olderMessagesBtn.disabled = true;
+      if (!older) {
+        state.historyBefore = null;
+        olderMessagesBtn.classList.add("hidden");
+        messagesEl.innerHTML = '<div class="empty"><span class="spinner"></span> 加载会话…</div>';
+      }
+      const isCurrent = () => state.currentId === sessionId && state.historyRequest === request;
+      const params = new URLSearchParams({ limit: "30" });
+      if (before) params.set("before", before);
+      try {
+        const data = await api("/chat/sessions/" + sessionId + "/messages?" + params);
+        if (!isCurrent()) return;
+        state.historyBefore = data.next_before || null;
+        olderMessagesBtn.classList.toggle("hidden", !state.historyBefore);
+        const items = data.items || [];
+        if (!older && !items.length) {
+          welcomeState();
+          return;
+        }
+        if (older) {
+          const previousHeight = messagesEl.scrollHeight;
+          const previousTop = messagesEl.scrollTop;
+          const fragment = document.createDocumentFragment();
+          items.forEach(item => renderMessage(item, fragment));
+          messagesEl.prepend(fragment);
+          messagesEl.scrollTop = previousTop + messagesEl.scrollHeight - previousHeight;
+        } else {
+          messagesEl.innerHTML = "";
+          items.forEach(item => renderMessage(item));
+          scrollToBottom();
+        }
+      } catch (err) {
+        if (!isCurrent()) return;
+        if (older) toast(err.message, "error");
+        else messagesEl.innerHTML = '<div class="alert error">' + escapeHtml(err.message) + "</div>";
+      } finally {
+        if (isCurrent()) {
+          state.loadingMessages = false;
+          olderMessagesBtn.disabled = false;
+        }
+      }
+    }
+
+    olderMessagesBtn.addEventListener("click", () => loadMessages({ older: true }));
+
+    async function sendMessage() {
+      const content = inputEl.value.trim();
+      if (!content || state.sending || state.loadingMessages) return;
+
+      const controller = new AbortController();
+      state.abortController = controller;
+      setSending(true, "正在连接…");
+
+      let userWrap = null;
+      let aiWrap = null;
+      let accText = "";
+      let finalCitations = [];
+      let finalMeta = {};
+      let gotResult = false;
+      let isRetry = false;
+      let sessionId = null;
+
+      try {
+        if (!state.currentId) await createSession();
+        sessionId = state.currentId;
+        const version = el("version-select").value || null;
+        const previous = pendingRetries.get(sessionId);
+        isRetry = previous?.content === content && previous?.version === version;
+        const key = isRetry ? previous.key : Array.from(
+          crypto.getRandomValues(new Uint8Array(16)), byte => byte.toString(16).padStart(2, "0")
+        ).join("");
+        pendingRetries.set(sessionId, { content, version, key });
+
+        // 乐观上屏：立即显示用户消息与 AI 思考占位，减少等待割裂感
+        if (inputEl.value.trim() === content) {
+          inputEl.value = "";
+          autoGrow();
+        }
+        messagesEl.querySelector(".empty")?.remove();
+        messagesEl.querySelector(".suggest-wrap")?.remove();
+        const createdAt = new Date().toISOString();
+        if (!isRetry) {
+          userWrap = renderMessage({ role: "user", content, created_at: createdAt });
+        }
+        aiWrap = document.createElement("div");
+        aiWrap.className = "message assistant";
+        aiWrap.innerHTML =
+          '<div class="avatar">AI</div>' +
+          '<div class="bubble-wrap">' +
+            '<div class="bubble"><span class="typing"><span></span><span></span><span></span></span><span class="stage-text">正在检索资料…</span></div>' +
+            '<div class="meta-line">生成中…</div>' +
+            '<div class="extras"></div>' +
+          "</div>";
+        messagesEl.appendChild(aiWrap);
+        scrollToBottom();
+
+        const bubbleEl = aiWrap.querySelector(".bubble");
+        const metaEl = aiWrap.querySelector(".meta-line");
+        const extrasEl = aiWrap.querySelector(".extras");
+
+        const headers = {
+          "Content-Type": "application/json",
+          "Idempotency-Key": key,
+        };
+        const token = getToken();
+        if (token) headers["Authorization"] = "Bearer " + token;
+
+        const response = await fetch("/api/chat/sessions/" + sessionId + "/stream", {
+          method: "POST",
+          headers,
+          body: JSON.stringify({ content, product_version: version }),
+          signal: controller.signal,
+        });
+
+        if (response.status === 401) {
+          clearAuth();
+          location.href = "/login";
+          return;
+        }
+        if (!response.ok || !response.body) {
+          const errData = await response.json().catch(() => null);
+          const detail = (errData && (errData.detail || errData.message)) || ("请求失败（HTTP " + response.status + "）");
+          throw new Error(Array.isArray(detail) ? detail.map(i => i.msg).filter(Boolean).join("，") : detail);
+        }
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder("utf-8");
+        let buffer = "";
+
+        while (true) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split("\n");
+          buffer = lines.pop() || "";
+
+          for (const rawLine of lines) {
+            const line = rawLine.trim();
+            if (!line.startsWith("data:")) continue;
+            const payload = line.slice(5).trim();
+            if (!payload || payload === "[DONE]") continue;
+            let ev;
+            try {
+              ev = JSON.parse(payload);
+            } catch (_e) {
+              continue;
+            }
+
+            if (ev.type === "meta" && ev.session && ev.session.title) {
+              el("chat-title").textContent = ev.session.title;
+            } else if (ev.type === "stage") {
+              const label = STAGE_LABELS[ev.stage] || "正在生成回答…";
+              sendingText.textContent = label;
+              if (!accText) {
+                const st = bubbleEl.querySelector(".stage-text");
+                if (st) st.textContent = label;
+              }
+            } else if (ev.type === "citations") {
+              finalCitations = ev.citations || [];
+              extrasEl.innerHTML = citationsHtml(finalCitations);
+            } else if (ev.type === "token") {
+              accText += ev.content || "";
+              const stick = isNearBottom();
+              bubbleEl.innerHTML = renderMarkdown(accText);
+              aiWrap.dataset.rawContent = accText;
+              if (stick) scrollToBottom();
+            } else if (ev.type === "warning" && ev.message) {
+              toast(ev.message);
+            } else if (ev.type === "error") {
+              finalMeta.partial = true;
+              toast(ev.message || "回答生成中断", "error");
+            } else if (ev.type === "result") {
+              gotResult = true;
+              accText = ev.answer || accText;
+              finalCitations = ev.citations || finalCitations;
+              finalMeta = Object.assign({}, finalMeta, ev);
+              const stick = isNearBottom();
+              bubbleEl.innerHTML = renderMarkdown(accText);
+              aiWrap.dataset.rawContent = accText;
+              metaEl.innerHTML = metaLineHtml(new Date().toISOString(), finalMeta, false);
+              extrasEl.innerHTML = assistantExtras({ citations: finalCitations, meta: finalMeta });
+              if (stick) scrollToBottom();
+            } else if (ev.type === "saved") {
+              pendingRetries.delete(sessionId);
+              if (ev.stream_status === "partial") {
+                finalMeta.stream_status = "partial";
+                metaEl.innerHTML = metaLineHtml(new Date().toISOString(), finalMeta, false);
+              }
+            }
+          }
+        }
+
+        if (!gotResult) {
+          bubbleEl.innerHTML = renderMarkdown(accText || "（未收到完整回答）");
+          aiWrap.dataset.rawContent = accText;
+          metaEl.innerHTML = metaLineHtml(new Date().toISOString(), finalMeta, false);
+        }
+        if (isRetry) {
+          await loadMessages();
+        }
+        await loadSessions().catch(() => {});
+      } catch (err) {
+        if (err && err.name === "AbortError") {
+          if (aiWrap) {
+            const bubbleEl = aiWrap.querySelector(".bubble");
+            const metaEl = aiWrap.querySelector(".meta-line");
+            if (!accText) {
+              bubbleEl.textContent = "已停止生成。";
+            }
+            aiWrap.dataset.rawContent = accText;
+            metaEl.innerHTML = metaLineHtml(new Date().toISOString(), { partial: true }, false);
+          }
+          toast("已停止生成");
+          await loadSessions().catch(() => {});
+        } else {
+          if (aiWrap && !accText) aiWrap.remove();
+          if (userWrap && !accText) {
+            userWrap.remove();
+            if (!inputEl.value.trim()) {
+              inputEl.value = content;
+              autoGrow();
+            }
+          }
+          toast(err.message || "发送失败", "error");
+        }
+      } finally {
+        state.abortController = null;
+        setSending(false, "正在生成回答");
+      }
+    }
+
+    // 引用角标点击：展开引用并高亮对应条目；复制按钮：复制原始回答文本
+    messagesEl.addEventListener("click", function (event) {
+      const ref = event.target.closest(".cite-ref");
+      if (ref) {
+        const msgEl = ref.closest(".message");
+        const details = msgEl && msgEl.querySelector("details.citations");
+        if (!details) return;
+        details.open = true;
+        const target = details.querySelector('.citation[data-cite-index="' + ref.dataset.citeIndex + '"]');
+        if (target) {
+          target.scrollIntoView({ behavior: "smooth", block: "nearest" });
+          target.classList.remove("highlight");
+          void target.offsetWidth;
+          target.classList.add("highlight");
+          setTimeout(() => target.classList.remove("highlight"), 1800);
+        }
+        return;
+      }
+      const copyBtn = event.target.closest("[data-copy]");
+      if (copyBtn) {
+        const msgEl = copyBtn.closest(".message");
+        const raw = msgEl ? (msgEl.dataset.rawContent || msgEl.querySelector(".bubble")?.textContent || "") : "";
+        if (!raw) return;
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(raw).then(
+            () => toast("已复制回答", "success"),
+            () => toast("复制失败，请手动选择复制", "error")
+          );
+        } else {
+          toast("当前浏览器不支持自动复制", "error");
+        }
+      }
+    });
+
+    // 草稿卡：编辑、保存、确认。确认前先 PATCH 保存当前输入，避免用户改完直接确认时丢失修改。
+    messagesEl.addEventListener("click", async function (event) {
+      const btn = event.target.closest("[data-action]");
+      if (!btn) return;
+      const card = btn.closest(".draft-card");
+      if (!card) return;
+      const draftId = card.id.replace("draft-", "");
+      const msg = card.querySelector(".draft-msg");
+      const fields = {};
+      card.querySelectorAll("[data-field]").forEach((input) => {
+        fields[input.dataset.field] = input.value;
+      });
+
+      btn.disabled = true;
+      try {
+        if (btn.dataset.action === "later") {
+          card.style.opacity = "0.65";
+          msg.textContent = "已暂时收起。需要时可在对话中继续要求创建工单。";
+          return;
+        }
+        // 保存时带上当前版本，避免覆盖别人改过的草稿；确认时带保存后的新版本
+        const currentVersion = Number(card.dataset.version || 1);
+        const saved = await api("/tickets/drafts/" + draftId, {
+          method: "PATCH",
+          body: Object.assign({}, fields, { expected_version: currentVersion }),
+        });
+        card.dataset.version = String(saved && saved.version ? saved.version : currentVersion + 1);
+        if (btn.dataset.action === "save") {
+          msg.textContent = "修改已保存，工单尚未创建。";
+          toast("草稿修改已保存", "success");
+          return;
+        }
+        const result = await api("/tickets/confirm", {
+          method: "POST",
+          body: { draft_id: draftId, expected_version: Number(card.dataset.version) },
+        });
+        const ticket = result && result.ticket ? result.ticket : result;
+        card.outerHTML = ticketResultHtml(ticket);
+        toast("工单创建成功：" + (ticket.ticket_no || ""), "success");
+      } catch (err) {
+        msg.textContent = err.message + (err.requestId ? "（request_id: " + err.requestId + "）" : "");
+        toast(err.message, "error");
+      } finally {
+        btn.disabled = false;
+      }
+    });
+
+    el("composer").addEventListener("submit", function (event) {
+      event.preventDefault();
+      sendMessage();
+    });
+
+    inputEl.addEventListener("keydown", function (event) {
+      if (event.key === "Enter" && !event.shiftKey) {
+        event.preventDefault();
+        sendMessage();
+      }
+    });
+
+    (async function init() {
+      try {
+        await loadSessions();
+        if (state.sessions.length) {
+          state.currentId = state.sessions[0].id;
+          el("chat-title").textContent = state.sessions[0].title || "智能问答";
+          renderSessions();
+          await loadMessages();
+        } else {
+          await createSession();
+        }
+      } catch (err) {
+        messagesEl.innerHTML = '<div class="alert error">' + escapeHtml(err.message) + "</div>";
+      }
+    })();
+  </script>
+</body>
+</html>

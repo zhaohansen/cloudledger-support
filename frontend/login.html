@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>登录 · 云账科技财税费控支持台</title>
+  <link rel="stylesheet" href="/assets/styles.css" />
+</head>
+<body>
+  <div class="login-page">
+    <section class="login-side">
+      <a class="brand" href="/login">
+        <span class="brand-mark">云</span><span>云账科技</span>
+      </a>
+      <h1>财税费控与数电票<br>支持工作台</h1>
+      <p class="lead">
+        查询数电票合规与费控规则，受控提交财务异常工单，跟进处理闭环。
+      </p>
+      <ul class="login-points">
+        <li><b>有依据的合规回答</b>：仅依据当前租户有权访问的制度与产品规范，引用可追溯。</li>
+        <li><b>核对版本后才建单</b>：草稿可编辑，乐观锁与唯一约束防止误建单和并发重复建单。</li>
+        <li><b>多租户内控隔离</b>：企业仅见自身单据与私有制度，顾问仅可处理获授权租户。</li>
+      </ul>
+      <span class="login-tag">企业财税费控场景工程演示</span>
+    </section>
+
+    <main class="login-main">
+      <div class="login-card">
+        <h2>登录工作台</h2>
+        <p class="sub">使用演示账号登录，或输入管理员分配的账号。</p>
+
+        <div id="login-error" class="alert error hidden"></div>
+
+        <form id="login-form">
+          <div class="field">
+            <label for="username">用户名</label>
+            <input class="input" id="username" name="username" autocomplete="username" required maxlength="64" placeholder="例如 customer_a" />
+          </div>
+          <div class="field">
+            <label for="password">密码</label>
+            <input class="input" id="password" name="password" type="password" autocomplete="current-password" required maxlength="128" placeholder="请输入密码" />
+          </div>
+          <button class="btn" id="login-btn" type="submit">登录</button>
+        </form>
+
+        <div class="demo-accounts">
+          <h3>演示账号（仅本地演示，点击自动填入）</h3>
+          <div class="demo-grid" id="demo-grid"></div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <script src="/assets/common.js"></script>
+  <script>
+    // 登录页：提交账号密码，成功后将 Token 与用户信息写入 localStorage。
+    const existingUser = getUser();
+    if (getToken() && existingUser) {
+      location.href = homeFor(existingUser.role);
+    }
+
+    const form = el("login-form");
+    const errorBox = el("login-error");
+    const loginBtn = el("login-btn");
+
+    const grid = el("demo-grid");
+    grid.innerHTML = DEMO_ACCOUNTS.map(function (item) {
+      return '<button type="button" class="demo-chip" data-username="' + escapeHtml(item.username) +
+        '" data-password="' + escapeHtml(item.password) + '"><b>' + escapeHtml(item.label) +
+        "</b>" + escapeHtml(item.username) + "</button>";
+    }).join("");
+    grid.addEventListener("click", function (event) {
+      const chip = event.target.closest(".demo-chip");
+      if (!chip) return;
+      el("username").value = chip.dataset.username;
+      el("password").value = chip.dataset.password;
+      el("password").focus();
+    });
+
+    form.addEventListener("submit", async function (event) {
+      event.preventDefault();
+      errorBox.classList.add("hidden");
+      loginBtn.disabled = true;
+      loginBtn.textContent = "登录中…";
+      try {
+        const data = await api("/auth/login", {
+          method: "POST",
+          skipAuthRedirect: true,
+          body: { username: el("username").value.trim(), password: el("password").value },
+        });
+        saveAuth(data);
+        location.href = homeFor(data.role);
+      } catch (err) {
+        errorBox.textContent = err.message + (err.requestId ? "（request_id: " + err.requestId + "）" : "");
+        errorBox.classList.remove("hidden");
+      } finally {
+        loginBtn.disabled = false;
+        loginBtn.textContent = "登录";
+      }
+    });
+  </script>
+</body>
+</html>

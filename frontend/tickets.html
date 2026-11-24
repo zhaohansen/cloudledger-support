@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>我的工单 · 云账科技</title>
+  <link rel="stylesheet" href="/assets/styles.css" />
+</head>
+<body>
+  <header class="app-header" id="app-header"></header>
+
+  <main class="page">
+    <div class="page-head">
+      <div>
+        <h1>我的工单</h1>
+        <p class="sub">这里只展示当前账号创建的工单。新工单请先在智能问答中描述问题并确认草稿。</p>
+      </div>
+      <a class="btn" href="/chat">去智能问答</a>
+    </div>
+
+    <div class="stat-row" id="stat-row"></div>
+
+    <div class="split">
+      <section class="panel">
+        <div class="panel-head">
+          <h2>工单列表</h2>
+          <span class="muted small" id="list-count"></span>
+        </div>
+        <div class="panel-body">
+          <div class="filters">
+            <select class="select" id="status-filter">
+              <option value="">全部状态</option>
+              <option value="pending">待处理</option>
+              <option value="processing">处理中</option>
+              <option value="waiting_customer">待客户确认</option>
+              <option value="closed">已关闭</option>
+            </select>
+          </div>
+          <div class="ticket-list" id="ticket-list">
+            <div class="empty"><span class="spinner"></span> 加载中…</div>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel" id="detail-panel">
+        <div class="panel-head"><h2>工单详情</h2><span class="muted small" id="detail-no"></span></div>
+        <div class="panel-body" id="detail-body">
+          <div class="empty"><strong>选择一张工单</strong>点击左侧列表查看处理进度和客服回复。</div>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <script src="/assets/common.js"></script>
+  <script>
+    // 我的工单页：客户查看本人工单、回复、上传附件、确认解决。
+    const user = requireAuth();
+    if (user) renderNav("tickets", user);
+
+    const state = { tickets: [], currentId: null, detail: null };
+
+    el("stat-row").addEventListener("click", function (event) {
+      const stat = event.target.closest(".stat");
+      if (!stat) return;
+      el("status-filter").value = stat.dataset.status;
+      loadTickets();
+    });
+
+    async function loadCounts() {
+      try {
+        renderTicketStats(await api("/tickets/counts"));
+      } catch (_err) {
+        // 统计失败不阻塞主流程
+      }
+    }
+
+    async function loadTickets() {
+      const status = el("status-filter").value;
+      el("ticket-list").innerHTML = '<div class="empty"><span class="spinner"></span> 加载中…</div>';
+      try {
+        const data = await api("/tickets" + (status ? "?status=" + encodeURIComponent(status) : ""));
+        state.tickets = data.items || [];
+        renderTicketList();
+      } catch (err) {
+        el("ticket-list").innerHTML = '<div class="alert error">' + escapeHtml(err.message) + "</div>";
+      }
+    }
+
+    function renderTicketList() {
+      el("list-count").textContent = state.tickets.length + " 张";
+      if (!state.tickets.length) {
+        el("ticket-list").innerHTML = '<div class="empty"><strong>没有符合条件的工单</strong>去智能问答描述问题，确认草稿后会在这里出现。</div>';
+        return;
+      }
+      el("ticket-list").innerHTML = state.tickets.map(function (ticket) {
+        return '<div class="ticket-item ' + (ticket.id === state.currentId ? "active" : "") +
+          '" data-id="' + escapeHtml(ticket.id) + '">' +
+          '<div class="row1"><span class="no">' + escapeHtml(ticket.ticket_no) + "</span>" +
+            statusBadge(ticket.status) + priorityBadge(ticket.priority) + "</div>" +
+          '<div class="title">' + escapeHtml(ticket.title) + "</div>" +
+          '<div class="row2"><span>' + escapeHtml(categoryLabel(ticket.category)) + "</span>" +
+            "<span>· " + escapeHtml(ticket.product_version || "版本未提供") + "</span>" +
+            "<span>· " + escapeHtml(fmtTime(ticket.updated_at)) + "</span></div>" +
+        "</div>";
+      }).join("");
+    }
+
+    el("ticket-list").addEventListener("click", function (event) {
+      const item = event.target.closest(".ticket-item");
+      if (!item) return;
+      state.currentId = item.dataset.id;
+      renderTicketList();
+      loadDetail();
+    });
+
+    function messageHtml(message) {
+      const isMe = message.author_id === user.user_id;
+      const roleName = isMe ? "我" : (ROLE_LABELS[message.author_role] || message.author_role || "系统");
+      const staff = message.author_role === "agent" || message.author_role === "admin";
+      return '<div class="msg-item ' + (staff ? "staff" : "") + '">' +
+        '<div class="who">' + escapeHtml(roleName.slice(0, 1)) + "</div>" +
+        '<div class="body"><div class="content">' + escapeHtml(message.content) + "</div>" +
+        '<div class="meta">' + escapeHtml(roleName) + " · " + escapeHtml(fmtTime(message.created_at)) +
+          (message.message_type === "supplement" ? " · 补充信息" : "") + "</div></div></div>";
+    }
+
+    function statusActions(ticket) {
+      if (user.role !== "customer") return "";
+      if (ticket.status === "waiting_customer") {
+        return '<button class="btn" data-status="closed">确认已解决</button>' +
+          '<button class="btn secondary" data-status="processing">问题仍未解决</button>';
+      }
+      return "";
+    }
+
+    function renderDetail(ticket) {
+      state.detail = ticket;
+      el("detail-no").textContent = ticket.ticket_no;
+      const closedNote = ticket.status === "closed"
+        ? '<div class="alert info" style="margin-top:12px">该工单已关闭。如需继续处理，可在下方回复（管理员可重新打开）。</div>'
+        : "";
+      el("detail-body").innerHTML =
+        '<div class="detail-head"><h3>' + escapeHtml(ticket.title) + "</h3>" +
+          statusBadge(ticket.status) + priorityBadge(ticket.priority) + "</div>" +
+        '<div class="detail-meta">' +
+          "<span>单号 <b>" + escapeHtml(ticket.ticket_no) + "</b></span>" +
+          "<span>分类 <b>" + escapeHtml(categoryLabel(ticket.category)) + "</b></span>" +
+          "<span>版本 <b>" + escapeHtml(ticket.product_version || "未提供") + "</b></span>" +
+          "<span>创建 <b>" + escapeHtml(fmtTime(ticket.created_at)) + "</b></span>" +
+          "<span>更新 <b>" + escapeHtml(fmtTime(ticket.updated_at)) + "</b></span>" +
+        "</div>" + closedNote +
+        '<div class="detail-grid">' +
+          '<div class="full detail-block"><span class="k">问题描述</span>' + escapeHtml(ticket.description || "-") + "</div>" +
+          '<div class="detail-block"><span class="k">报错信息</span>' + escapeHtml(ticket.error_message || "未提供") + "</div>" +
+          '<div class="detail-block"><span class="k">已尝试步骤</span>' + escapeHtml(ticket.tried_steps || "未提供") + "</div>" +
+        "</div>" +
+        '<div class="actions-row">' + statusActions(ticket) + "</div>" +
+        '<div class="timeline"><h4>沟通记录</h4>' +
+          (ticket.messages && ticket.messages.length
+            ? ticket.messages.map(messageHtml).join("")
+            : '<div class="muted small">暂无回复</div>') +
+        "</div>" +
+        '<div class="timeline"><h4>流转记录</h4>' + ticketEventsHtml(ticket.events) + "</div>" +
+        '<div class="timeline"><h4>附件</h4>' + ticketAttachmentsHtml(ticket) + "</div>" +
+        '<div class="reply-box">' +
+          '<textarea class="textarea" id="reply-input" maxlength="5000" placeholder="补充说明或回复客服…"></textarea>' +
+          '<div class="row">' +
+            '<button class="btn" id="reply-btn">发送回复</button>' +
+            '<label class="file-label">添加附件 <input type="file" id="attach-input" class="hidden" /></label>' +
+            '<span class="muted small" id="attach-name"></span>' +
+          "</div>" +
+        "</div>";
+    }
+
+    async function loadDetail() {
+      if (!state.currentId) return;
+      el("detail-body").innerHTML = '<div class="empty"><span class="spinner"></span> 加载详情…</div>';
+      try {
+        const ticket = await api("/tickets/" + state.currentId);
+        renderDetail(ticket);
+      } catch (err) {
+        el("detail-body").innerHTML = '<div class="alert error">' + escapeHtml(err.message) + "</div>";
+      }
+    }
+
+    el("status-filter").addEventListener("change", loadTickets);
+
+    el("detail-body").addEventListener("click", async function (event) {
+      const statusBtn = event.target.closest("[data-status]");
+      const downloadBtn = event.target.closest("[data-download]");
+
+      if (statusBtn) {
+        const target = statusBtn.dataset.status;
+        const confirmText = target === "closed"
+          ? "确认问题已解决并关闭工单？"
+          : "确认问题仍未解决？工单会回到处理中。";
+        if (!confirm(confirmText)) return;
+        statusBtn.disabled = true;
+        try {
+          await api("/tickets/" + state.currentId + "/status", {
+            method: "PATCH",
+            body: { status: target, note: target === "closed" ? "客户确认已解决" : "客户反馈仍未解决" },
+          });
+          toast("工单状态已更新", "success");
+          await Promise.all([loadDetail(), loadTickets(), loadCounts()]);
+        } catch (err) {
+          toast(err.message, "error");
+        } finally {
+          statusBtn.disabled = false;
+        }
+      }
+
+      if (downloadBtn) {
+        downloadBtn.disabled = true;
+        try {
+          const response = await fetch(
+            "/api/tickets/" + state.currentId + "/attachments/" + downloadBtn.dataset.download,
+            { headers: { Authorization: "Bearer " + getToken() } }
+          );
+          if (!response.ok) throw new Error("附件下载失败");
+          const blob = await response.blob();
+          const url = URL.createObjectURL(blob);
+          const link = document.createElement("a");
+          link.href = url;
+          link.download = "attachment";
+          link.click();
+          URL.revokeObjectURL(url);
+        } catch (err) {
+          toast(err.message, "error");
+        } finally {
+          downloadBtn.disabled = false;
+        }
+      }
+
+      if (event.target.id === "reply-btn") {
+        const input = el("reply-input");
+        const content = input.value.trim();
+        if (!content) return toast("请输入回复内容", "error");
+        const btn = event.target;
+        btn.disabled = true;
+        try {
+          await api("/tickets/" + state.currentId + "/messages", { method: "POST", body: { content } });
+          input.value = "";
+          toast("回复已发送", "success");
+          await Promise.all([loadDetail(), loadTickets(), loadCounts()]);
+        } catch (err) {
+          toast(err.message, "error");
+        } finally {
+          btn.disabled = false;
+        }
+      }
+    });
+
+    el("detail-body").addEventListener("change", async function (event) {
+      if (event.target.id !== "attach-input") return;
+      const file = event.target.files[0];
+      if (!file) return;
+      el("attach-name").textContent = file.name;
+      const formData = new FormData();
+      formData.append("file", file);
+      try {
+        await api("/tickets/" + state.currentId + "/attachments", { method: "POST", body: formData });
+        toast("附件上传成功", "success");
+        await loadDetail();
+      } catch (err) {
+        toast(err.message, "error");
+      } finally {
+        event.target.value = "";
+      }
+    });
+
+    (async function init() {
+      await Promise.all([loadTickets(), loadCounts()]);
+      if (state.tickets.length) {
+        state.currentId = state.tickets[0].id;
+        renderTicketList();
+        loadDetail();
+      }
+    })();
+  </script>
+</body>
+</html>

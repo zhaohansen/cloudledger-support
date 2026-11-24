@@ -1,0 +1,328 @@
+{
+  "description": "独立测试集（不参与调参）。覆盖企业财税费控与数电发票场景下的检索、回答、受控工单工具与多租户权限四类评测；所有期望值均可在 demo_docs 中人工核对。",
+  "version": "3.0",
+  "suites": {
+    "retrieval": [
+      {
+        "id": "R01",
+        "tags": ["同义改写"],
+        "username": "customer_a",
+        "query": "报销单只保存了草稿，还没提交审批，为什么部门可用预算变少了",
+        "expected_doc_titles": ["预算编制与额度控制手册（v2.2）", "版本更新说明 v2.2"],
+        "expected_chunk_keywords": ["草稿", "冻结"]
+      },
+      {
+        "id": "R02",
+        "tags": ["口语表达"],
+        "username": "customer_a",
+        "query": "手机拍张车票能不能自动把票扫进去",
+        "expected_doc_titles": ["预算编制与额度控制手册（v2.3）", "版本更新说明 v2.3"],
+        "expected_chunk_keywords": ["拍照", "OCR"]
+      },
+      {
+        "id": "R03",
+        "tags": ["版本冲突"],
+        "username": "customer_a",
+        "query": "报销单保存草稿会不会冻结可用预算",
+        "expected_doc_titles": [
+          "预算编制与额度控制手册（v2.2）",
+          "预算编制与额度控制手册（v2.3）",
+          "版本更新说明 v2.2",
+          "版本更新说明 v2.3"
+        ],
+        "expect_version_conflict": true
+      },
+      {
+        "id": "R04",
+        "tags": ["同义改写"],
+        "username": "customer_a",
+        "query": "差旅报销单财务复核错了怎么退回修改",
+        "expected_doc_titles": ["差旅与日常费用报销手册"],
+        "expected_chunk_keywords": ["反审核"]
+      },
+      {
+        "id": "R05",
+        "tags": ["故障排查"],
+        "username": "customer_a",
+        "query": "银企直连打款出现银行退票怎么重发",
+        "expected_doc_titles": ["银企直连付款与退票处理手册"],
+        "expected_chunk_keywords": ["退票"]
+      },
+      {
+        "id": "R06",
+        "tags": ["同义改写"],
+        "username": "customer_a",
+        "query": "离职员工的报销账号怎么处理",
+        "expected_doc_titles": ["角色权限与职责分离规范", "华辰智造费控内控制度"],
+        "expected_chunk_keywords": ["禁用"]
+      },
+      {
+        "id": "R07",
+        "tags": ["版本过滤", "口语表达"],
+        "username": "customer_a",
+        "query": "导入报错怎么下载带错误原因的明细表",
+        "product_version": "v2.3",
+        "expected_doc_titles": ["版本更新说明 v2.3", "Excel 批量导入常见问题"],
+        "expected_chunk_keywords": ["错误行", "错误原因"]
+      },
+      {
+        "id": "R08",
+        "tags": ["同义改写"],
+        "username": "customer_a",
+        "query": "Excel 预算导入模板版本不匹配怎么办",
+        "expected_doc_titles": ["Excel 批量导入常见问题", "预算编制与额度控制手册（v2.2）"],
+        "expected_chunk_keywords": ["模板"]
+      },
+      {
+        "id": "R09",
+        "tags": ["故障排查"],
+        "username": "customer_a",
+        "query": "预算执行流水和部门可用额度对不上",
+        "expected_doc_titles": ["常见财务异常排查手册"],
+        "expected_chunk_keywords": ["重算"]
+      },
+      {
+        "id": "R10",
+        "tags": ["证据不足"],
+        "username": "customer_a",
+        "query": "怎么用 API 配置 Milvus 集群的索引参数",
+        "expect_no_match": true
+      },
+      {
+        "id": "R11",
+        "tags": ["跨租户"],
+        "username": "customer_b",
+        "query": "华辰智造深圳交付中心报销提示预算不足怎么处理",
+        "forbidden_titles": ["华辰智造费控内控制度"]
+      },
+      {
+        "id": "R12",
+        "tags": ["跨租户"],
+        "username": "customer_a",
+        "query": "星海文化传媒项目费用科目编码规则是什么",
+        "forbidden_titles": ["星海文化报销管理细则"]
+      }
+    ],
+    "answer": [
+      {
+        "id": "A01",
+        "tags": ["同义改写"],
+        "username": "customer_a",
+        "question": "报销单只保存了草稿，还没提交审批，为什么部门可用预算变少了",
+        "product_version": "v2.2",
+        "expected_body_keywords": ["草稿", "冻结"],
+        "expect_citations": true
+      },
+      {
+        "id": "A02",
+        "tags": ["口语表达"],
+        "username": "customer_a",
+        "question": "移动端能不能拍照自动识票",
+        "product_version": "v2.3",
+        "expected_body_keywords": ["拍照"],
+        "expect_citations": true
+      },
+      {
+        "id": "A03",
+        "tags": ["同义改写"],
+        "username": "customer_a",
+        "question": "差旅报销单财务复核错了还能改吗",
+        "expected_body_keywords": ["反审核"],
+        "expect_citations": true
+      },
+      {
+        "id": "A04",
+        "tags": ["口语表达"],
+        "username": "customer_a",
+        "question": "钱打给员工卡里被银行弹回来了为啥额度还锁着",
+        "expected_body_keywords": ["预算"],
+        "expect_citations": true
+      },
+      {
+        "id": "A05",
+        "tags": ["证据不足"],
+        "username": "customer_a",
+        "question": "量子纠缠通信设备的校准步骤是什么",
+        "expect_answer_mode": "no_evidence",
+        "expect_no_citations": true
+      },
+      {
+        "id": "A06",
+        "tags": ["证据不足"],
+        "username": "customer_a",
+        "question": "你们公司去年的营业收入是多少",
+        "expect_answer_mode": "no_evidence",
+        "expect_no_citations": true
+      },
+      {
+        "id": "A07",
+        "tags": ["版本冲突"],
+        "username": "customer_a",
+        "question": "这个版本的部门预算怎么导入预算表",
+        "product_version": "v9.9",
+        "expect_answer_mode": "no_version_match",
+        "expect_no_citations": true,
+        "expected_body_keywords": ["v9.9"]
+      },
+      {
+        "id": "A08",
+        "tags": ["多轮指代"],
+        "username": "customer_a",
+        "turns": ["v2.2 的部门预算怎么导入预算表？", "第二个步骤怎么操作？"],
+        "expected_citation_titles": ["预算编制与额度控制手册（v2.2）"],
+        "expect_citations": true
+      },
+      {
+        "id": "A09",
+        "tags": ["故障排查", "流式"],
+        "username": "customer_a",
+        "question": "预算执行流水和部门可用额度对不上怎么排查",
+        "product_version": "v2.3",
+        "expected_body_keywords": ["流水"],
+        "expect_citations": true,
+        "stream": true
+      },
+      {
+        "id": "A10",
+        "tags": ["版本过滤", "流式"],
+        "username": "customer_a",
+        "question": "报销超预算生成追加单后额度没有变化",
+        "product_version": "v2.3",
+        "expected_body_keywords": ["审核"],
+        "expect_citations": true,
+        "stream": true
+      }
+    ],
+    "tool": [
+      {
+        "id": "T01",
+        "tags": ["草稿"],
+        "scenario": "draft_only",
+        "username": "customer_a2",
+        "message": "转人工。我用的是 v2.3，报销超预算生成追加单后额度没有变化，已经重新登录试过。"
+      },
+      {
+        "id": "T02",
+        "tags": ["否定确认", "回归"],
+        "scenario": "negative_confirm",
+        "username": "customer_a2",
+        "base_message": "转人工。我用的是 v2.3，报销超预算生成追加单后额度没有变化，已经重新登录试过。",
+        "phrases": ["不要提交", "先不创建吧", "确认之前先改一下描述"]
+      },
+      {
+        "id": "T03",
+        "tags": ["重复点击"],
+        "scenario": "confirm_sequential",
+        "username": "customer_a2",
+        "message": "转人工。我用的是 v2.3，银企直连付款批次提交后一直显示处理中，已经刷新过页面。"
+      },
+      {
+        "id": "T04",
+        "tags": ["并发"],
+        "scenario": "confirm_concurrent",
+        "username": "customer_a2",
+        "message": "转人工。我用的是 v2.3，数电发票红冲核销关联失败，已经重试过一次。"
+      },
+      {
+        "id": "T05",
+        "tags": ["旧版本确认"],
+        "scenario": "stale_version",
+        "username": "customer_a2",
+        "message": "转人工。我用的是 v2.3，预算追加调整单终审后额度未更新，已经检查过明细。"
+      },
+      {
+        "id": "T06",
+        "tags": ["取消后重建"],
+        "scenario": "cancel_recreate",
+        "username": "customer_a2",
+        "message": "转人工。我用的是 v2.2，保存差旅报销草稿后可用预算被冻结，已经检查过单据状态。"
+      },
+      {
+        "id": "T07",
+        "tags": ["跨用户"],
+        "scenario": "cross_user_draft",
+        "owner": "customer_a",
+        "other": "customer_b",
+        "message": "转人工。我用的是 v2.2，部门预算表导入提示模板版本不匹配，已经重新下载模板。"
+      },
+      {
+        "id": "T08",
+        "tags": ["工具失败"],
+        "scenario": "missing_draft",
+        "username": "customer_a"
+      },
+      {
+        "id": "T09",
+        "tags": ["权限"],
+        "scenario": "status_permission",
+        "username": "customer_b"
+      },
+      {
+        "id": "T11",
+        "tags": ["确认版本缺失", "回归"],
+        "scenario": "missing_version",
+        "username": "customer_a2",
+        "message": "转人工。我用的是 v2.3，预算追加调整单终审后额度未更新，已经检查过明细。"
+      },
+      {
+        "id": "T12",
+        "tags": ["并发确认", "回归"],
+        "scenario": "concurrent_confirm",
+        "username": "customer_a2",
+        "message": "转人工。我用的是 v2.3，银企直连付款批次提交后一直显示处理中，已经刷新过页面。"
+      },
+      {
+        "id": "T10",
+        "tags": ["重复副作用"],
+        "scenario": "supplement_idempotent",
+        "username": "customer_a"
+      }
+    ],
+    "permission": [
+      {
+        "id": "P01",
+        "tags": ["跨租户"],
+        "kind": "chat_private_retrieval",
+        "username": "customer_b",
+        "query": "华辰智造苏州研发中心的月度结账安排是什么",
+        "forbidden_titles": ["华辰智造费控内控制度"],
+        "forbidden_body_keywords": ["华辰智造", "苏州研发中心", "深圳交付中心"]
+      },
+      {
+        "id": "P02",
+        "tags": ["跨租户"],
+        "kind": "chat_private_retrieval",
+        "username": "customer_a",
+        "query": "星海文化传媒项目每月什么时候关账",
+        "forbidden_titles": ["星海文化报销管理细则"],
+        "forbidden_body_keywords": ["星海文化", "25 日 17:00", "XH260105"]
+      },
+      {
+        "id": "P03",
+        "tags": ["越权读取"],
+        "kind": "ticket_cross_user",
+        "username": "customer_b",
+        "owner": "customer_a"
+      },
+      {
+        "id": "P04",
+        "tags": ["客服授权范围"],
+        "kind": "ticket_agent_not_granted",
+        "username": "agent2",
+        "owner": "customer_a"
+      },
+      {
+        "id": "P05",
+        "tags": ["越权管理"],
+        "kind": "knowledge_delete_forbidden",
+        "username": "customer_a"
+      },
+      {
+        "id": "P06",
+        "tags": ["越权管理"],
+        "kind": "admin_users_forbidden",
+        "username": "customer_a"
+      }
+    ]
+  }
+}

@@ -1,0 +1,24 @@
+# 可选的 PostgreSQL 开发环境。
+# 说明：本项目默认使用 SQLite，且当前开发机未安装 Docker，因此该文件未实测。
+# 使用前请安装 asyncpg（pip install asyncpg），并把 DATABASE_URL 切换为下面的地址。
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: cloudledger-postgres
+    environment:
+      POSTGRES_USER: cloudledger
+      POSTGRES_PASSWORD: change-me
+      POSTGRES_DB: cloudledger
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cloudledger"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  pgdata:
