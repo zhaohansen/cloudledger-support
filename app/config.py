@@ -86,6 +86,13 @@ class Settings(BaseSettings):
     # ── 会话 ──────────────────────────────────────────────
     chat_history_limit: int = 8
 
+    # ── MCP / 公开联网搜索（可选，默认关闭） ───────────────
+    # web_search_mcp_url：外部 Web Search MCP Server 地址（如 http://127.0.0.1:8001）
+    # web_search_api_key：可选 Tavily 等公开搜索 API Key；均留空时显式返回 unconfigured，绝不伪造结果
+    web_search_mcp_url: str = ""
+    web_search_api_key: str = ""
+    web_search_timeout_seconds: float = 8.0
+
     model_config = SettingsConfigDict(
         env_file=str(BASE_DIR / ".env"),
         env_file_encoding="utf-8",
@@ -94,9 +101,11 @@ class Settings(BaseSettings):
     )
 
     @model_validator(mode="after")
-    def _fallback_deepseek_api_key(self) -> "Settings":
+    def _fallback_env_keys(self) -> "Settings":
         if not self.llm_api_key and "deepseek.com" in self.llm_base_url.lower():
             self.llm_api_key = os.getenv("DEEPSEEK_API_KEY", "").strip()
+        if not self.web_search_api_key:
+            self.web_search_api_key = os.getenv("TAVILY_API_KEY", "").strip()
         return self
 
     # ── 派生属性 ──────────────────────────────────────────

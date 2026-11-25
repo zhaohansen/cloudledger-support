@@ -34,6 +34,11 @@
 - **引用编号校验与降级**：校验回答中的 `[n]` 是否落在本次检索片段范围内；无有效引用时自动提示重试一次，仍不合规或调用超时则退回资料摘录并显式标注 `llm_uncited` / `llm_degraded`。
 - **真实 SSE 流式输出**：`LLMClient.stream` 消费 OpenAI 兼容接口（默认对接 DeepSeek `deepseek-chat`，自动识别 `LLM_API_KEY` 或系统环境变量 `DEEPSEEK_API_KEY`）的 `astream` 逐块推送 `token` 事件；客户端断连立即中止生成，未完成文本标记 `stream_status=partial` 且不挂载引用列表。
 
+### 1.5 只读 MCP 工具接入层（JSON-RPC 2.0）
+- **最小权限原则**：在 `POST /mcp` 暴露标准 MCP（`initialize` / `tools/list` / `tools/call`）只读工具：`search_tenant_docs`（租户知识库检索）、`list_my_tickets`（工单列表）、`get_ticket_detail`（工单详情）与 `web_search`（公开财税政策联网搜索，支持 `WEB_SEARCH_MCP_URL` 转发或 `TAVILY_API_KEY` / `WEB_SEARCH_API_KEY` 接入）。
+- **与受控写库边界一致**：所有 `/mcp` 调用强制校验 Bearer JWT 并回库核验账号状态，忽略参数中传入的伪造 `tenant_id`；**刻意不向 MCP 开放任何建单/修改/删除写库工具**，写操作仍必须经由 LangGraph 人机确认与乐观锁校验。
+- **可解释联网降级**：未配置联网搜索源或外部服务超时异常时，显式返回 `unconfigured` / `error` 状态与空列表，绝不伪造外部搜索结果，也不向外网传输任何租户私有文档。
+
 ---
 
 ## 2. 技术栈与目录结构
@@ -42,7 +47,7 @@
 | --- | --- |
 | Web 与异步框架 | FastAPI 0.117 + Uvicorn |
 | ORM 与数据库 | SQLAlchemy 2.0 Async + SQLite（`aiosqlite`，默认开箱即用）/ PostgreSQL 15（`asyncpg`） |
-| 工作流编排 | LangGraph 1.0（单图状态机、确定性条件路由） |
+| 工作流与工具协议 | LangGraph 1.0（单图状态机、确定性条件路由）+ MCP 只读接入层（JSON-RPC 2.0 `tools/list` / `tools/call` + 联网搜索扩展） |
 | 大模型接入 | `langchain-openai`（OpenAI 兼容协议，支持 DeepSeek API 真流式与 JSON 结构化建议） |
 | 检索与重排 | FlagEmbedding `BGE-M3`、Milvus（`pymilvus` `WeightedRanker`）、可选 `CrossEncoder` 重排、`jieba` |
 | 认证与安全 | `python-jose`（HS256 JWT）+ `passlib/bcrypt`（线程池异步校验） |
@@ -59,12 +64,13 @@ cloudledger-support/
 │   ├── security.py / deps.py    # bcrypt、JWT 与逐请求数据库身份复核
 │   ├── agent/                   # LangGraph 状态、节点、规则意图与 Pydantic 白名单结构化建议
 │   ├── api/                     # auth / chat / tickets / knowledge / admin 路由
-│   └── services/                # 权限、知识切分同步、BGE-M3/Milvus 检索、问答流式、工单事务
+│   ├── mcp/                     # 只读型 MCP Server（POST /mcp）与异步 MCP Client
+│   └── services/                # 权限、知识切分同步、BGE-M3/Milvus 检索、问答流式、工单事务、联网搜索
 ├── demo_docs/                   # 13 份财税费控与数电发票规范（覆盖 v2.2 / v2.3 / 租户私有内控制度）
 ├── frontend/                    # 5 个角色视图页面与公共交互脚本
 ├── scripts/                     # 数据库初始化、演示种子、评测脚本、向量重建与语义后端自检
 ├── eval/test_cases.json         # 40 条独立评测集（检索 12 / 回答 10 / 工具 12 / 权限 6）
-├── tests/                       # 80 项自动化回归测试（覆盖鉴权、乐观锁竞争、幂等、SSE 与 PG 事务）
+├── tests/                       # 86 项自动化回归测试（覆盖鉴权、MCP 只读/隔离、乐观锁竞争、幂等、SSE 与 PG 事务）
 └── docs/                        # 架构、数据模型、API、测试报告与工程边界说明
 ```
 
@@ -139,7 +145,7 @@ python run.py
 .\.venv\Scripts\python.exe -m pytest -q --disable-warnings
 ```
 
-- **SQLite 默认回归（2026-11-24 实测）**：共收集 **80 项测试，78 passed，2 skipped**（跳过项为需显式提供 `TEST_POSTGRES_URL` 的 2 项真实 PostgreSQL 并发/迁移测试；此前已在本地 PostgreSQL 15.20 隔离 schema 实测通过）。
+- **SQLite 默认回归（2026-11-25 实测）**：共收集 **86 项测试，84 passed，2 skipped**（跳过项为需显式提供 `TEST_POSTGRES_URL` 的 2 项真实 PostgreSQL 并发/迁移测试；此前已在本地 PostgreSQL 15.20 隔离 schema 实测通过）。
 - 覆盖范围：JWT 即时吊销、跨租户/跨用户越权拦截、否定/疑问确认防误触、`expected_version` 422/409 矩阵、编辑/取消/确认并发竞争、Savepoint 唯一冲突恢复、知识更新删除同步、引用越界剔除及 SSE 中途断流 `partial` 保存。
 
 ### 5.2 四套件评测（40 条独立样本）
