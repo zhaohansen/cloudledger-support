@@ -5,6 +5,30 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>智能问答 · 云账科技</title>
   <link rel="stylesheet" href="/assets/styles.css" />
+  <style>
+    .web-toggle {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 5px 11px;
+      border-radius: 999px;
+      border: 1px solid #d5dce4;
+      background: #fff;
+      color: #4b5563;
+      font-size: 13px;
+      cursor: pointer;
+      user-select: none;
+      transition: all .15s ease;
+    }
+    .web-toggle input { display: none; }
+    .web-toggle.active {
+      border-color: #2563eb;
+      background: #eff6ff;
+      color: #1d4ed8;
+      font-weight: 600;
+    }
+    .web-toggle:hover { border-color: #93c5fd; }
+  </style>
 </head>
 <body>
   <header class="app-header" id="app-header"></header>
@@ -27,6 +51,10 @@
           <option value="v2.2">v2.2</option>
           <option value="v2.3">v2.3</option>
         </select>
+        <label class="web-toggle" id="web-toggle-label" title="开启后将调用 Tavily / MCP 联网搜索补充公开财税政策（绝不上传租户私有文档）">
+          <input type="checkbox" id="web-search-toggle" />
+          <span>🌐 联网搜索</span>
+        </label>
         <span class="loading hidden" id="sending-flag"><span class="spinner"></span><span id="sending-text">正在生成回答</span></span>
       </div>
 
@@ -76,9 +104,16 @@
 
     const STAGE_LABELS = {
       retrieving: "正在检索资料…",
+      web_search: "正在联网搜索公开资料…",
       generating: "正在生成回答…",
       agent: "正在处理工单流程…",
     };
+
+    const webToggleEl = el("web-search-toggle");
+    const webToggleLabel = el("web-toggle-label");
+    webToggleEl.addEventListener("change", function () {
+      webToggleLabel.classList.toggle("active", webToggleEl.checked);
+    });
 
     function setSending(value, label) {
       state.sending = value;
@@ -217,11 +252,15 @@
     }
 
     function citationHtml(citation) {
+      const isWeb = citation.product_version === "web" && /^https?:\/\//i.test(citation.section || "");
+      const sectionHtml = isWeb
+        ? '<a class="muted" href="' + escapeHtml(citation.section) + '" target="_blank" rel="noopener noreferrer">· 打开来源网页 ↗</a>'
+        : (citation.section ? '<span class="muted">· ' + escapeHtml(citation.section) + "</span>" : "");
       return '<div class="citation" data-cite-index="' + escapeHtml(citation.index) + '">' +
         '<div class="cite-head"><span class="cite-title">[' + escapeHtml(citation.index) + "] " +
           escapeHtml(citation.title || "未命名资料") + "</span>" +
-          (citation.section ? '<span class="muted">· ' + escapeHtml(citation.section) + "</span>" : "") +
-          '<span class="badge role">' + escapeHtml(citation.product_version || "all") + "</span>" +
+          sectionHtml +
+          '<span class="badge role">' + escapeHtml(isWeb ? "联网" : (citation.product_version || "all")) + "</span>" +
           '<span class="cite-score">' + Number(citation.score || 0).toFixed(3) + "</span></div>" +
         '<div class="cite-body">' + escapeHtml(citation.snippet || "") + "</div>" +
       "</div>";
@@ -385,12 +424,13 @@
         if (!state.currentId) await createSession();
         sessionId = state.currentId;
         const version = el("version-select").value || null;
+        const useWebSearch = Boolean(webToggleEl && webToggleEl.checked);
         const previous = pendingRetries.get(sessionId);
-        isRetry = previous?.content === content && previous?.version === version;
+        isRetry = previous?.content === content && previous?.version === version && previous?.useWebSearch === useWebSearch;
         const key = isRetry ? previous.key : Array.from(
           crypto.getRandomValues(new Uint8Array(16)), byte => byte.toString(16).padStart(2, "0")
         ).join("");
-        pendingRetries.set(sessionId, { content, version, key });
+        pendingRetries.set(sessionId, { content, version, useWebSearch, key });
 
         // 乐观上屏：立即显示用户消息与 AI 思考占位，减少等待割裂感
         if (inputEl.value.trim() === content) {
@@ -429,7 +469,7 @@
         const response = await fetch("/api/chat/sessions/" + sessionId + "/stream", {
           method: "POST",
           headers,
-          body: JSON.stringify({ content, product_version: version }),
+          body: JSON.stringify({ content, product_version: version, use_web_search: useWebSearch }),
           signal: controller.signal,
         });
 

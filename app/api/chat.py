@@ -28,6 +28,7 @@ class SessionCreateRequest(BaseModel):
 class MessageRequest(BaseModel):
     content: str = Field(..., min_length=1, max_length=2000)
     product_version: str | None = Field(None, max_length=32)
+    use_web_search: bool = False
 
 
 @router.post("/sessions")
@@ -126,6 +127,7 @@ async def stream_message(
                     session_id,
                     req.content,
                     product_version=req.product_version,
+                    use_web_search=req.use_web_search,
                     request_id=request_id,
                     is_disconnected=request.is_disconnected,
                     idempotency_key=idempotency_key,

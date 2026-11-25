@@ -453,6 +453,7 @@ async def stream_message(
     content: str,
     *,
     product_version: str | None = None,
+    use_web_search: bool = False,
     request_id: str = "-",
     is_disconnected: DisconnectCheck = None,
     idempotency_key: str | None = None,
@@ -506,6 +507,7 @@ async def stream_message(
             facts.get("description") or content,
             product_version=version,
             history=prepared.history,
+            use_web_search=use_web_search,
         )
         try:
             async for event in answer_stream:

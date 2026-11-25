@@ -393,6 +393,7 @@ async def stream_answer(
     *,
     product_version: str | None = None,
     history: list[dict] | None = None,
+    use_web_search: bool = False,
 ) -> AsyncIterator[dict]:
     """真实流式回答。
 
@@ -409,6 +410,34 @@ async def stream_answer(
     outcome = await search_knowledge(
         db, user, retrieval_query, product_version=product_version
     )
+    if use_web_search and outcome.reason != "no_version_match":
+        from app.services.web_search import search_public_web
+
+        yield {"type": "stage", "stage": "web_search"}
+        web_res = await search_public_web(retrieval_query, max_results=3)
+        if web_res.get("status") == "ok" and web_res.get("items"):
+            web_chunks = [
+                RetrievedChunk(
+                    chunk_id=f"web-{idx}",
+                    document_id=f"web-{idx}",
+                    title=item.get("title") or "公开联网资料",
+                    doc_type="web",
+                    doc_version="公开联网",
+                    product_version="web",
+                    section=item.get("url") or "",
+                    chunk_index=idx,
+                    content=item.get("snippet") or item.get("title") or "",
+                    score=1.0,
+                    dense_score=1.0,
+                    lexical_score=0.0,
+                )
+                for idx, item in enumerate(web_res["items"], start=1)
+            ]
+            outcome.items = list(outcome.items) + web_chunks
+            if outcome.reason == "no_match":
+                outcome.reason = "ok"
+        elif web_res.get("detail"):
+            yield {"type": "warning", "message": web_res["detail"]}
     retrieval_ms = (time.perf_counter() - retrieval_started) * 1000
     retrieval_meta = _retrieval_metadata(outcome, retrieval_ms)
     yield {
