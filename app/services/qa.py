@@ -433,7 +433,11 @@ async def stream_answer(
                 )
                 for idx, item in enumerate(web_res["items"], start=1)
             ]
-            outcome.items = list(outcome.items) + web_chunks
+            max_total = max(1, settings.retrieval_top_k)
+            local_items = list(outcome.items)
+            web_take = min(len(web_chunks), 2 if local_items else max_total)
+            local_keep = max(0, max_total - web_take)
+            outcome.items = local_items[:local_keep] + web_chunks[:web_take]
             if outcome.reason == "no_match":
                 outcome.reason = "ok"
         elif web_res.get("detail"):

@@ -138,7 +138,7 @@ async def root():
 
 
 def _page(name: str):
-    return FileResponse(FRONTEND_DIR / name)
+    return FileResponse(FRONTEND_DIR / name, headers={"Cache-Control": "no-store"})
 
 
 @app.get("/login", include_in_schema=False)
