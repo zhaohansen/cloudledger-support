@@ -125,3 +125,20 @@ async def test_streamed_turn_can_be_replayed_without_duplicate_messages(client):
     assert '"type": "saved"' in first.text and '"type": "saved"' in replay.text
     history = await client.get(f"{base}/messages", headers=auth(token))
     assert [message["role"] for message in history.json()["items"]] == ["user", "assistant"]
+
+
+async def test_delete_session_owner_only(client):
+    """用户可删除自己的会话，他人尝试删除返回 404。"""
+    token_a = await token_for("customer_a")
+    token_b = await token_for("customer_b")
+    session_id = await _new_session(client, token_a)
+
+    other = await client.delete(f"/api/chat/sessions/{session_id}", headers=auth(token_b))
+    assert other.status_code == 404
+
+    ok = await client.delete(f"/api/chat/sessions/{session_id}", headers=auth(token_a))
+    assert ok.status_code == 200
+    assert ok.json()["deleted"] is True
+
+    after = await client.get(f"/api/chat/sessions/{session_id}/messages", headers=auth(token_a))
+    assert after.status_code == 404

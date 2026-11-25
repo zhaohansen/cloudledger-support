@@ -18,7 +18,7 @@ from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass
 
 from fastapi import HTTPException
-from sqlalchemy import and_, or_, select
+from sqlalchemy import and_, delete, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -71,6 +71,15 @@ async def get_session(db: AsyncSession, user: UserContext, session_id: str) -> C
     if session is None or session.user_id != user.user_id or session.tenant_id != user.tenant_id:
         raise HTTPException(status_code=404, detail="会话不存在")
     return session
+
+
+async def delete_session(db: AsyncSession, user: UserContext, session_id: str) -> None:
+    """删除当前用户自己的会话及其消息与幂等记录（不影响已创建的正式工单）。"""
+    session = await get_session(db, user, session_id)
+    await db.execute(delete(ChatMessage).where(ChatMessage.session_id == session.id))
+    await db.execute(delete(ChatRequest).where(ChatRequest.session_id == session.id))
+    await db.delete(session)
+    await db.commit()
 
 
 async def get_messages(db: AsyncSession, user: UserContext, session_id: str) -> list[dict]:

@@ -50,6 +50,16 @@ async def list_sessions(
     return {"items": [chat_service.serialize_session(s) for s in sessions]}
 
 
+@router.delete("/sessions/{session_id}")
+async def delete_session(
+    session_id: str,
+    user: UserContext = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    await chat_service.delete_session(db, user, session_id)
+    return {"deleted": True, "session_id": session_id}
+
+
 @router.get("/sessions/{session_id}/messages")
 async def list_messages(
     session_id: str,
