@@ -4,7 +4,7 @@
 from fastapi import APIRouter
 
 from app.api import admin, auth, chat, knowledge, tickets
-from app.mcp import mcp_router
+from app.mcp.server import router as mcp_router
 
 api_router = APIRouter()
 api_router.include_router(auth.router, prefix="/api/auth", tags=["auth"])
