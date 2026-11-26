@@ -18,6 +18,12 @@ os.environ["LLM_MODE"] = "extractive"
 os.environ["EMBEDDING_BACKEND"] = "hash"
 os.environ["RETRIEVAL_BACKEND"] = "local"
 os.environ["DATA_DIR"] = str(TEST_ROOT / "data")
+# 测试绝不调用真实付费/联网接口：清空本机可能存在的 LLM 与联网搜索凭据
+for _key in ("TAVILY_API_KEY", "DEEPSEEK_API_KEY"):
+    os.environ.pop(_key, None)
+os.environ["LLM_API_KEY"] = ""
+os.environ["WEB_SEARCH_API_KEY"] = ""
+os.environ["WEB_SEARCH_MCP_URL"] = ""
 
 import pytest  # noqa: E402
 from httpx import ASGITransport, AsyncClient  # noqa: E402

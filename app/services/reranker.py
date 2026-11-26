@@ -28,12 +28,6 @@ def resolve_reranker_path() -> Path | None:
         [
             BASE_DIR / "models" / "reranker" / "bge-reranker-large",
             BASE_DIR / "models" / "reranker" / "bge-reranker-v2-m3",
-            BASE_DIR.parent
-            / "EduAgent完整代码"
-            / "backend"
-            / "models"
-            / "reranker"
-            / "bge-reranker-large",
         ]
     )
     for path in candidates:

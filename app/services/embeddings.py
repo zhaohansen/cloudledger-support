@@ -67,16 +67,11 @@ class HashEmbeddingBackend:
 
 
 def resolve_bge_m3_path() -> Path | None:
-    """按配置、项目内目录、同工作区原项目目录的顺序查找本地 BGE-M3 权重。"""
+    """按配置、项目内 models/ 目录的顺序查找本地 BGE-M3 权重。"""
     candidates: list[Path] = []
     if settings.bge_m3_model_path:
         candidates.append(Path(settings.bge_m3_model_path))
-    candidates.extend(
-        [
-            BASE_DIR / "models" / "embedding" / "bge-m3",
-            BASE_DIR.parent / "EduAgent完整代码" / "backend" / "models" / "embedding" / "bge-m3",
-        ]
-    )
+    candidates.append(BASE_DIR / "models" / "embedding" / "bge-m3")
     for path in candidates:
         if path.is_dir() and any(path.glob("*.safetensors")):
             return path

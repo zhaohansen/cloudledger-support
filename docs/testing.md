@@ -17,7 +17,7 @@ cd cloudledger-support
 python -m pytest -q --disable-warnings
 
 # 2. 接入本地 PostgreSQL 隔离 schema 跑全量事务与并发竞争测试（测试结束自动清理 schema）
-$env:TEST_POSTGRES_URL="postgresql+asyncpg://<user>:<password>@127.0.0.1:5433/eduagent"
+$env:TEST_POSTGRES_URL="postgresql+asyncpg://<user>:<password>@127.0.0.1:5433/cloudledger"
 python -m pytest -q --disable-warnings
 
 # 3. 离线四套件评测（摘录模式，零模型调用成本）

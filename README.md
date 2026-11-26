@@ -70,7 +70,7 @@ cloudledger-support/
 ├── frontend/                    # 5 个角色视图页面与公共交互脚本
 ├── scripts/                     # 数据库初始化、演示种子、评测脚本、向量重建与语义后端自检
 ├── eval/test_cases.json         # 40 条独立评测集（检索 12 / 回答 10 / 工具 12 / 权限 6）
-├── tests/                       # 86 项自动化回归测试（覆盖鉴权、MCP 只读/隔离、乐观锁竞争、幂等、SSE 与 PG 事务）
+├── tests/                       # 87 项自动化回归测试（覆盖鉴权、MCP 只读/隔离、乐观锁竞争、幂等、SSE 与 PG 事务）
 └── docs/                        # 架构、数据模型、API、测试报告与工程边界说明
 ```
 
@@ -145,7 +145,7 @@ python run.py
 .\.venv\Scripts\python.exe -m pytest -q --disable-warnings
 ```
 
-- **SQLite 默认回归（2026-11-25 实测）**：共收集 **86 项测试，84 passed，2 skipped**（跳过项为需显式提供 `TEST_POSTGRES_URL` 的 2 项真实 PostgreSQL 并发/迁移测试；此前已在本地 PostgreSQL 15.20 隔离 schema 实测通过）。
+- **SQLite 默认回归（2026-11-26 实测）**：共收集 **87 项测试，85 passed，2 skipped**（跳过项为需显式提供 `TEST_POSTGRES_URL` 的 2 项真实 PostgreSQL 并发/迁移测试；此前已在本地 PostgreSQL 15.20 隔离 schema 实测通过）。
 - 覆盖范围：JWT 即时吊销、跨租户/跨用户越权拦截、否定/疑问确认防误触、`expected_version` 422/409 矩阵、编辑/取消/确认并发竞争、Savepoint 唯一冲突恢复、知识更新删除同步、引用越界剔除及 SSE 中途断流 `partial` 保存。
 
 ### 5.2 四套件评测（40 条独立样本）
