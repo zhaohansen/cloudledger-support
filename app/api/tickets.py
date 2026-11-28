@@ -14,9 +14,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.uploads import read_upload
 from app.config import get_settings
 from app.db import get_db
-from app.deps import UserContext, get_current_user
+from app.deps import UserContext, get_current_user, require_roles
 from app.models import TicketAttachment, new_id
-from app.services import tickets as ticket_service
+from app.services import qa, tickets as ticket_service
 from app.services.tools import tool_create_ticket
 
 router = APIRouter(prefix="/api/tickets", tags=["tickets"])
@@ -151,6 +151,29 @@ async def update_status(
     ticket = await ticket_service.get_ticket(db, user, ticket_id)
     updated = await ticket_service.update_status(db, user, ticket, req.status, req.note)
     return ticket_service.serialize_ticket(updated)
+
+
+@router.post("/{ticket_id}/reply-draft")
+async def draft_reply(
+    ticket_id: str,
+    user: UserContext = Depends(require_roles("agent", "admin")),
+    db: AsyncSession = Depends(get_db),
+):
+    """用工单标题和版本生成供顾问审阅的回复，不写入对话或流转记录。"""
+    ticket = await ticket_service.get_ticket(db, user, ticket_id)
+    if ticket.status == "closed":
+        raise HTTPException(status_code=409, detail="工单已关闭，重新打开后可生成草稿")
+    result = await qa.answer_question(
+        db, user, ticket.title, product_version=ticket.product_version or None,
+        tenant_scope=ticket.tenant_id,
+    )
+    # 资料不足时把说明给顾问，保留手写回复入口。
+    return {
+        "draft": result.answer if result.citations else "",
+        "message": result.answer if not result.citations else "",
+        "citations": result.citations,
+        "answer_mode": result.answer_mode,
+    }
 
 
 @router.post("/{ticket_id}/messages")

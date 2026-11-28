@@ -171,3 +171,47 @@ async def test_customer_cannot_skip_to_closed_from_processing(client):
     async with AsyncSessionLocal() as db:
         drafts = (await db.execute(select(TicketDraft))).scalars().all()
     assert drafts  # 演示数据至少有一份草稿记录
+
+
+async def test_reply_draft_is_advisor_only_and_does_not_send_message(client, monkeypatch):
+    from app.services import qa
+
+    customer = auth(await token_for("customer_b"))
+    wrong_agent = auth(await token_for("agent1"))
+    advisor = auth(await token_for("agent2"))
+    draft = await _make_draft("customer_b", "库存编码导入需复核" + uuid.uuid4().hex[:8])
+    confirmed = await client.post(
+        "/api/tickets/confirm", headers=customer,
+        json={"draft_id": draft["id"], "expected_version": draft["version"]},
+    )
+    assert confirmed.status_code == 200
+    ticket = confirmed.json()["ticket"]
+    path = f"/api/tickets/{ticket['id']}"
+    before = (await client.get(path, headers=advisor)).json()
+    seen = []
+
+    async def fake_answer(db, user, question, **scope):
+        seen.append((question, scope))
+        return qa.AnswerResult(
+            answer="请核对编码格式 [1]", citations=[{"index": 1, "title": "导入指南"}],
+            answer_mode="extractive",
+        )
+
+    monkeypatch.setattr(qa, "answer_question", fake_answer)
+    assert (await client.post(path + "/reply-draft", headers=customer)).status_code == 403
+    assert (await client.post(path + "/reply-draft", headers=wrong_agent)).status_code == 403
+    response = await client.post(path + "/reply-draft", headers=advisor)
+    assert response.status_code == 200
+    assert response.json()["draft"] == "请核对编码格式 [1]"
+    assert seen == [(ticket["title"], {"product_version": "v2.3", "tenant_scope": ticket["tenant_id"]})]
+    after = (await client.get(path, headers=advisor)).json()
+    assert after["messages"] == before["messages"]
+    assert after["status"] == before["status"]
+
+    async def no_evidence(*args, **kwargs):
+        return qa.AnswerResult(answer="暂无可用资料", citations=[], answer_mode="no_evidence")
+
+    monkeypatch.setattr(qa, "answer_question", no_evidence)
+    response = await client.post(path + "/reply-draft", headers=advisor)
+    assert response.json()["draft"] == ""
+    assert response.json()["message"] == "暂无可用资料"

@@ -227,3 +227,15 @@ def test_long_paragraph_has_no_duplicate_tail():
 
     text = "乙" * 1120
     assert chunk_text(text) == [text[:600], text[520:]]
+
+
+async def test_ticket_retrieval_scope_excludes_other_tenant_private_content():
+    admin = await ctx_for("admin")
+    customer = await ctx_for("customer_b")
+    query = "苏州研发中心 月结 拍照 OCR"
+    async with AsyncSessionLocal() as db:
+        unrestricted = await search_knowledge(db, admin, query, top_k=20)
+        scoped = await search_knowledge(db, admin, query, top_k=20, tenant_scope=customer.tenant_id)
+    private_hits = {chunk.chunk_id for chunk in unrestricted.items if "苏州研发中心" in chunk.content}
+    assert private_hits
+    assert not any(chunk.chunk_id in private_hits for chunk in scoped.items)

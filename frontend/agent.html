@@ -4,38 +4,41 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>工单处理 · 云账科技</title>
-  <link rel="stylesheet" href="/assets/styles.css" />
+  <link rel="stylesheet" href="/assets/styles.css?v=20261128-workbench-v4" />
 </head>
-<body>
+<body class="ticket-workbench-page">
   <header class="app-header" id="app-header"></header>
 
-  <main class="page">
-    <div class="page-head">
+  <main class="page ticket-workbench">
+    <div class="page-head ticket-page-head">
       <div>
         <h1>工单处理</h1>
-        <p class="sub">只显示当前客服被授权企业的工单；管理员可查看全部企业。所有操作由后端再次校验权限。</p>
+        <p class="sub">仅展示当前顾问被授权企业的工单；管理员可查看全部企业，所有操作由后端二次校验权限。</p>
       </div>
-      <a class="btn secondary" href="/chat">打开智能问答</a>
+      <div class="page-head-actions">
+        <a class="btn secondary" href="/chat">打开智能问答</a>
+      </div>
     </div>
 
-    <div class="stat-row" id="stat-row"></div>
+    <div class="stat-row ticket-stat-bar" id="stat-row" role="tablist" aria-label="工单状态筛选"></div>
 
-    <div class="split">
-      <section class="panel">
-        <div class="panel-head">
-          <h2>工单队列</h2>
-          <span class="muted small" id="list-count"></span>
-        </div>
-        <div class="panel-body">
-          <div class="filters">
-            <select class="select" id="status-filter">
+    <section class="ticket-workspace" aria-label="工单队列与处理详情">
+      <aside class="ticket-sidebar">
+        <div class="ticket-sidebar-head">
+          <div class="ticket-sidebar-title">
+            <h2>工单队列</h2>
+            <span class="count-pill" id="list-count">0</span>
+          </div>
+          <div class="ticket-sidebar-tools">
+            <input type="search" class="input ticket-search" id="ticket-search" placeholder="搜索标题、单号或企业…" aria-label="搜索工单" />
+            <select class="select hidden" id="status-filter" aria-label="状态筛选">
               <option value="">全部状态</option>
               <option value="pending">待处理</option>
               <option value="processing">处理中</option>
               <option value="waiting_customer">待客户确认</option>
               <option value="closed">已关闭</option>
             </select>
-            <select class="select" id="category-filter">
+            <select class="select ticket-category-select" id="category-filter" aria-label="分类筛选">
               <option value="">全部分类</option>
               <option value="budget">预算控制</option>
               <option value="invoice">数电发票</option>
@@ -47,28 +50,30 @@
               <option value="other">其他</option>
             </select>
           </div>
-          <div class="ticket-list" id="ticket-list">
-            <div class="empty"><span class="spinner"></span> 加载中…</div>
-          </div>
         </div>
-      </section>
+        <div class="ticket-list" id="ticket-list">
+          <div class="empty"><span class="spinner"></span> 加载中…</div>
+        </div>
+      </aside>
 
-      <section class="panel">
-        <div class="panel-head"><h2>处理详情</h2><span class="muted small" id="detail-no"></span></div>
-        <div class="panel-body" id="detail-body">
+      <div class="ticket-detail-pane">
+        <span class="hidden" id="detail-no"></span>
+        <div class="ticket-detail-body" id="detail-body">
           <div class="empty"><strong>选择一张工单</strong>查看客户描述、沟通记录与流转历史。</div>
         </div>
-      </section>
-    </div>
+      </div>
+    </section>
   </main>
 
-  <script src="/assets/common.js"></script>
+  <dialog id="ticket-conversation" class="ticket-chat" aria-labelledby="ticket-chat-title"></dialog>
+
+  <script src="/assets/common.js?v=20261128-workbench-v2"></script>
   <script>
     // 客服工作台：授权范围内工单筛选、详情、回复、状态流转、附件下载。
     const user = requireAuth(["agent", "admin"]);
     if (user) renderNav("agent", user);
 
-    const state = { tickets: [], currentId: null };
+    const state = { tickets: [], currentId: null, keyword: "" };
 
     // 与后端 ROLE_TRANSITIONS 保持一致；后端仍是最终校验方
     const ROLE_TRANSITIONS = {
@@ -96,8 +101,14 @@
     el("stat-row").addEventListener("click", function (event) {
       const stat = event.target.closest(".stat");
       if (!stat) return;
-      el("status-filter").value = stat.dataset.status;
+      el("status-filter").value = stat.dataset.status || "";
+      syncTicketStatActive(el("status-filter").value);
       loadTickets();
+    });
+
+    el("ticket-search").addEventListener("input", function (event) {
+      state.keyword = (event.target.value || "").trim().toLowerCase();
+      renderTicketList();
     });
 
     async function loadCounts() {
@@ -110,6 +121,7 @@
       const params = new URLSearchParams();
       const status = el("status-filter").value;
       const category = el("category-filter").value;
+      syncTicketStatActive(status);
       if (status) params.set("status", status);
       if (category) params.set("category", category);
       el("ticket-list").innerHTML = '<div class="empty"><span class="spinner"></span> 加载中…</div>';
@@ -117,28 +129,47 @@
         const data = await api("/tickets" + (params.toString() ? "?" + params.toString() : ""));
         state.tickets = data.items || [];
         renderTicketList();
+        if (state.tickets.length && !state.tickets.some(function (t) { return t.id === state.currentId; })) {
+          state.currentId = state.tickets[0].id;
+          renderTicketList();
+          loadDetail();
+        } else if (!state.tickets.length) {
+          state.currentId = null;
+          el("detail-no").textContent = "";
+          el("detail-body").innerHTML = '<div class="empty"><strong>当前筛选下暂无工单</strong>可以切换状态或分类查看。</div>';
+        }
       } catch (err) {
         el("ticket-list").innerHTML = '<div class="alert error">' + escapeHtml(err.message) + "</div>";
       }
     }
 
+    function filteredTickets() {
+      if (!state.keyword) return state.tickets;
+      return state.tickets.filter(function (ticket) {
+        const text = [ticket.title, ticket.ticket_no, ticket.tenant_id, categoryLabel(ticket.category), ticket.product_version].join(" ").toLowerCase();
+        return text.includes(state.keyword);
+      });
+    }
+
     function renderTicketList() {
-      el("list-count").textContent = state.tickets.length + " 张";
-      if (!state.tickets.length) {
-        el("ticket-list").innerHTML = '<div class="empty"><strong>当前筛选下没有工单</strong>可以切换状态或分类查看。</div>';
+      const visible = filteredTickets();
+      el("list-count").textContent = visible.length + " 张";
+      if (!visible.length) {
+        el("ticket-list").innerHTML = '<div class="empty"><strong>当前筛选下没有工单</strong>可以切换状态、分类或清空搜索词。</div>';
         return;
       }
-      el("ticket-list").innerHTML = state.tickets.map(function (ticket) {
+      el("ticket-list").innerHTML = visible.map(function (ticket) {
         return '<div class="ticket-item ' + (ticket.id === state.currentId ? "active" : "") +
           '" data-id="' + escapeHtml(ticket.id) + '">' +
+          '<div class="ticket-item-top"><div class="title">' + escapeHtml(ticket.title) + "</div>" +
+            statusBadge(ticket.status) + "</div>" +
           '<div class="row1"><span class="no">' + escapeHtml(ticket.ticket_no) + "</span>" +
-            statusBadge(ticket.status) + priorityBadge(ticket.priority) + "</div>" +
-          '<div class="title">' + escapeHtml(ticket.title) + "</div>" +
+            priorityBadge(ticket.priority) + "</div>" +
           '<div class="row2"><span>' + escapeHtml(categoryLabel(ticket.category)) + "</span>" +
-            "<span>· " + escapeHtml(ticket.product_version || "版本未提供") + "</span>" +
-            '<span title="' + escapeHtml(ticket.tenant_id) + '">· 企业 ' +
+            "<span>" + escapeHtml(ticket.product_version || "版本未提供") + "</span>" +
+            '<span title="' + escapeHtml(ticket.tenant_id) + '">企业 ' +
               escapeHtml((ticket.tenant_id || "").slice(0, 6)) + "</span>" +
-            "<span>· " + escapeHtml(fmtTime(ticket.updated_at)) + "</span></div>" +
+            '<span class="ticket-time">' + escapeHtml(fmtTime(ticket.updated_at)) + "</span></div>" +
         "</div>";
       }).join("");
     }
@@ -151,74 +182,102 @@
       loadDetail();
     });
 
-    function messageHtml(message) {
-      const isMe = message.author_id === user.user_id;
-      const roleName = isMe ? "我" : (ROLE_LABELS[message.author_role] || message.author_role || "系统");
-      const staff = message.author_role === "agent" || message.author_role === "admin";
-      return '<div class="msg-item ' + (staff ? "staff" : "") + '">' +
-        '<div class="who">' + escapeHtml(roleName.slice(0, 1)) + "</div>" +
-        '<div class="body"><div class="content">' + escapeHtml(message.content) + "</div>" +
-        '<div class="meta">' + escapeHtml(roleName) + " · " + escapeHtml(fmtTime(message.created_at)) +
-          (message.message_type === "supplement" ? " · 客户补充" : "") + "</div></div></div>";
-    }
-
     function statusActions(ticket) {
       const allowed = (ROLE_TRANSITIONS[user.role] || {})[ticket.status] || [];
-      return allowed.map(function (target) {
-        const cls = target === "closed" ? "btn danger" : (target === "processing" ? "btn" : "btn secondary");
-        return '<button class="' + cls + '" data-status="' + target + '">' +
-          escapeHtml(STATUS_ACTION_LABELS[target] || target) + "</button>";
+      const waiting = ticket.status === "waiting_customer";
+      const buttons = allowed.map(function (target) {
+        const withdraw = waiting && target === "processing";
+        const label = withdraw ? "撤回确认并继续处理"
+          : ticket.status === "closed" && target === "processing" ? "重新打开工单"
+          : (STATUS_ACTION_LABELS[target] || target);
+        const cls = target === "closed" ? "btn danger sm"
+          : withdraw ? "btn secondary sm" : "btn sm";
+        return '<button class="' + cls + '" data-status="' + target + '">' + escapeHtml(label) + "</button>";
       }).join("");
+      if (waiting) {
+        return '<div class="ticket-next-step is-ready"><div><strong>已发起客户确认</strong>' +
+          '<p>客户现在可以确认是否解决，必要时可撤回确认继续处理。</p></div><div class="ticket-next-actions">' +
+          buttons + "</div></div>";
+      }
+      if (!buttons) return "";
+      return '<div class="ticket-next-step"><div><strong>流转操作</strong>' +
+        '<p>按当前处理进展推进工单状态。</p></div><div class="ticket-next-actions">' +
+        buttons + "</div></div>";
     }
 
     function renderDetail(ticket) {
+      state.detailStatus = ticket.status;
       el("detail-no").textContent = ticket.ticket_no;
+      const msgCount = (ticket.messages || []).length;
       const closedNote = ticket.status === "closed"
-        ? '<div class="alert info" style="margin-top:12px">工单已关闭。' +
-          (user.role === "admin" ? "管理员可重新打开。" : "如客户再次反馈，请让客户确认后由管理员重新打开。") + "</div>"
+        ? '<div class="alert info detail-banner">工单已关闭。' +
+          (user.role === "admin" ? "管理员可重新打开。" : "如客户再次反馈，请由管理员重新打开。") + "</div>"
         : "";
+      const nextStep = statusActions(ticket);
       el("detail-body").innerHTML =
-        '<div class="detail-head"><h3>' + escapeHtml(ticket.title) + "</h3>" +
-          statusBadge(ticket.status) + priorityBadge(ticket.priority) + "</div>" +
-        '<div class="detail-meta">' +
-          "<span>单号 <b>" + escapeHtml(ticket.ticket_no) + "</b></span>" +
-          "<span>企业 ID <b class=\"mono\">" + escapeHtml(ticket.tenant_id) + "</b></span>" +
-          "<span>分类 <b>" + escapeHtml(categoryLabel(ticket.category)) + "</b></span>" +
-          "<span>版本 <b>" + escapeHtml(ticket.product_version || "未提供") + "</b></span>" +
-          "<span>创建 <b>" + escapeHtml(fmtTime(ticket.created_at)) + "</b></span>" +
-        "</div>" + closedNote +
-        '<div class="detail-grid">' +
-          '<div class="full detail-block"><span class="k">问题描述</span>' + escapeHtml(ticket.description || "-") + "</div>" +
-          '<div class="detail-block"><span class="k">报错信息</span>' + escapeHtml(ticket.error_message || "未提供") + "</div>" +
-          '<div class="detail-block"><span class="k">已尝试步骤</span>' + escapeHtml(ticket.tried_steps || "未提供") + "</div>" +
-        "</div>" +
-        '<div class="actions-row">' + statusActions(ticket) + "</div>" +
-        '<div class="timeline"><h4>沟通记录</h4>' +
-          (ticket.messages && ticket.messages.length
-            ? ticket.messages.map(messageHtml).join("")
-            : '<div class="muted small">暂无回复</div>') +
-        "</div>" +
-        '<div class="timeline"><h4>流转记录</h4>' + ticketEventsHtml(ticket.events) + "</div>" +
-        '<div class="timeline"><h4>客户附件</h4>' + ticketAttachmentsHtml(ticket) + "</div>" +
-        '<div class="reply-box">' +
-          '<textarea class="textarea" id="reply-input" maxlength="5000" placeholder="回复客户，说明处理方案或需要补充的信息…"></textarea>' +
-          '<div class="row">' +
-            '<button class="btn" id="reply-btn">发送回复</button>' +
-            '<label class="file-label">添加附件 <input type="file" id="attach-input" class="hidden" /></label>' +
-            '<span class="muted small" id="attach-name"></span>' +
+        '<div class="detail-hero">' +
+          '<div class="detail-hero-top">' +
+            '<div class="detail-badges">' +
+              '<span class="ticket-no-pill mono">' + escapeHtml(ticket.ticket_no) + "</span>" +
+              statusBadge(ticket.status) + priorityBadge(ticket.priority) +
+            "</div>" +
+            '<div class="detail-hero-actions">' +
+              '<button type="button" class="btn sm" data-open-conversation aria-haspopup="dialog">' +
+                (ticket.status === "closed" ? "查看对话" : "回复客户") + (msgCount ? " (" + msgCount + ")" : "") +
+              "</button>" +
+            "</div>" +
           "</div>" +
+          '<h2 class="detail-title">' + escapeHtml(ticket.title) + "</h2>" +
+          '<dl class="detail-meta-grid">' +
+            '<div><dt>企业 ID</dt><dd class="mono">' + escapeHtml(ticket.tenant_id) + "</dd></div>" +
+            "<div><dt>问题分类</dt><dd>" + escapeHtml(categoryLabel(ticket.category)) + "</dd></div>" +
+            "<div><dt>产品版本</dt><dd>" + escapeHtml(ticket.product_version || "未提供") + "</dd></div>" +
+            "<div><dt>创建时间</dt><dd>" + escapeHtml(fmtTime(ticket.created_at)) + "</dd></div>" +
+          "</dl>" +
+        "</div>" +
+        ticketProgressHtml(ticket.status) +
+        closedNote +
+        (nextStep ? '<div class="detail-action-banner">' + nextStep + "</div>" : "") +
+        '<div class="detail-columns">' +
+          '<div class="detail-main-col">' +
+            '<section class="detail-card">' +
+              '<h3 class="detail-card-title">问题描述</h3>' +
+              '<div class="detail-prose">' + escapeHtml(ticket.description || "未填写") + "</div>" +
+              '<div class="detail-subgrid">' +
+                '<div class="detail-subcard"><span class="k">报错信息</span><div class="detail-subval' + (ticket.error_message ? "" : " is-muted") + '">' + escapeHtml(ticket.error_message || "未提供") + "</div></div>" +
+                '<div class="detail-subcard"><span class="k">已尝试步骤</span><div class="detail-subval' + (ticket.tried_steps ? "" : " is-muted") + '">' + escapeHtml(ticket.tried_steps || "未提供") + "</div></div>" +
+              "</div>" +
+            "</section>" +
+            ticketConversationEntry(ticket) +
+          "</div>" +
+          '<aside class="detail-side-col">' +
+            '<section class="detail-card"><h3 class="detail-card-title">流转记录</h3>' + ticketEventsHtml(ticket.events) + "</section>" +
+            '<section class="detail-card"><h3 class="detail-card-title">客户附件</h3>' + ticketAttachmentsHtml(ticket) + "</section>" +
+          "</aside>" +
         "</div>";
+      conversation.update(ticket);
     }
 
-    async function loadDetail() {
-      if (!state.currentId) return;
-      el("detail-body").innerHTML = '<div class="empty"><span class="spinner"></span> 加载详情…</div>';
+    async function loadDetail(keepVisible = false) {
+      const id = state.currentId;
+      if (!id) return;
+      const detail = el("detail-body");
+      if (!keepVisible) detail.innerHTML = '<div class="empty"><span class="spinner"></span> 加载详情…</div>';
       try {
-        renderDetail(await api("/tickets/" + state.currentId));
+        const ticket = await api("/tickets/" + encodeURIComponent(id));
+        if (id === state.currentId) renderDetail(ticket);
       } catch (err) {
-        el("detail-body").innerHTML = '<div class="alert error">' + escapeHtml(err.message) + "</div>";
+        if (keepVisible) throw err;
+        if (id === state.currentId) detail.innerHTML = '<div class="alert error">' + escapeHtml(err.message) + "</div>";
       }
     }
+
+    const conversation = setupTicketConversation(
+      el("detail-body"), el("ticket-conversation"), user, async function (changed) {
+        await loadDetail(true);
+        if (changed) await Promise.all([loadTickets(), loadCounts()]);
+      }
+    );
 
     el("status-filter").addEventListener("change", loadTickets);
     el("category-filter").addEventListener("change", loadTickets);
@@ -229,8 +288,11 @@
 
       if (statusBtn) {
         const target = statusBtn.dataset.status;
+        const withdraw = state.detailStatus === "waiting_customer" && target === "processing";
+        if (withdraw && !confirm("撤回确认后，客户将暂时看不到确认按钮。继续处理这张工单？")) return;
         const note = target === "waiting_customer"
           ? "已给出处理方案，等待客户确认"
+          : withdraw ? "顾问撤回客户确认，继续处理"
           : target === "closed" ? "客服关闭工单" : "状态更新";
         statusBtn.disabled = true;
         try {
@@ -269,50 +331,10 @@
         }
       }
 
-      if (event.target.id === "reply-btn") {
-        const input = el("reply-input");
-        const content = input.value.trim();
-        if (!content) return toast("请输入回复内容", "error");
-        const btn = event.target;
-        btn.disabled = true;
-        try {
-          await api("/tickets/" + state.currentId + "/messages", { method: "POST", body: { content } });
-          input.value = "";
-          toast("回复已发送", "success");
-          await Promise.all([loadDetail(), loadTickets(), loadCounts()]);
-        } catch (err) {
-          toast(err.message, "error");
-        } finally {
-          btn.disabled = false;
-        }
-      }
-    });
-
-    el("detail-body").addEventListener("change", async function (event) {
-      if (event.target.id !== "attach-input") return;
-      const file = event.target.files[0];
-      if (!file) return;
-      el("attach-name").textContent = file.name;
-      const formData = new FormData();
-      formData.append("file", file);
-      try {
-        await api("/tickets/" + state.currentId + "/attachments", { method: "POST", body: formData });
-        toast("附件上传成功", "success");
-        await loadDetail();
-      } catch (err) {
-        toast(err.message, "error");
-      } finally {
-        event.target.value = "";
-      }
     });
 
     (async function init() {
       await Promise.all([loadTickets(), loadCounts()]);
-      if (state.tickets.length) {
-        state.currentId = state.tickets[0].id;
-        renderTicketList();
-        loadDetail();
-      }
     })();
   </script>
 </body>

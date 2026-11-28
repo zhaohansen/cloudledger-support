@@ -94,6 +94,7 @@ async def search_knowledge(
     *,
     product_version: str | None = None,
     top_k: int | None = None,
+    tenant_scope: str | None = None,
 ) -> SearchOutcome:
     query = (query or "").strip()
     top_k = top_k or settings.retrieval_top_k
@@ -114,6 +115,9 @@ async def search_knowledge(
         )
 
     allowed_tenants = await allowed_kb_tenant_ids(db, user)
+    if tenant_scope is not None:
+        # 工单回复仅使用该工单租户的私有资料和公共资料。
+        allowed_tenants = [tenant_id for tenant_id in allowed_tenants if tenant_id == tenant_scope]
 
     # 明确指定版本时，先确认知识库是否真的有该版本资料。
     # 只有"全版本通用"资料而没有该版本专属资料时，直接返回版本不匹配，

@@ -282,12 +282,14 @@ async def answer_question(
     *,
     product_version: str | None = None,
     history: list[dict] | None = None,
+    tenant_scope: str | None = None,
 ) -> AnswerResult:
     retrieval_started = time.perf_counter()
     retrieval_query = build_retrieval_query(question, history)
-    outcome = await search_knowledge(
-        db, user, retrieval_query, product_version=product_version
-    )
+    search_options = {"product_version": product_version}
+    if tenant_scope is not None:
+        search_options["tenant_scope"] = tenant_scope
+    outcome = await search_knowledge(db, user, retrieval_query, **search_options)
     retrieval_ms = (time.perf_counter() - retrieval_started) * 1000
     retrieval_meta = _retrieval_metadata(outcome, retrieval_ms)
 
