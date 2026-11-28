@@ -4,54 +4,86 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>登录 · 云账科技财税费控支持台</title>
-  <link rel="stylesheet" href="/assets/styles.css" />
+  <link rel="stylesheet" href="/assets/styles.css?v=20261128-login-v6" />
 </head>
-<body>
-  <div class="login-page">
-    <section class="login-side">
-      <a class="brand" href="/login">
-        <span class="brand-mark">云</span><span>云账科技</span>
-      </a>
-      <h1>财税费控与数电票<br>支持工作台</h1>
-      <p class="lead">
-        查询数电票合规与费控规则，受控提交财务异常工单，跟进处理闭环。
-      </p>
-      <ul class="login-points">
-        <li><b>有依据的合规回答</b>：仅依据当前租户有权访问的制度与产品规范，引用可追溯。</li>
-        <li><b>核对版本后才建单</b>：草稿可编辑，乐观锁与唯一约束防止误建单和并发重复建单。</li>
-        <li><b>多租户内控隔离</b>：企业仅见自身单据与私有制度，顾问仅可处理获授权租户。</li>
-      </ul>
-      <span class="login-tag">企业财税费控场景工程演示</span>
-    </section>
+<body class="login-body">
+  <div class="login-canvas">
+    <div class="login-container">
+      <section class="login-showcase" aria-labelledby="product-title">
+        <a class="brand login-brand" href="/login" aria-label="CloudLedger 云账科技">
+          <span class="brand-mark" aria-hidden="true">云</span>
+          <span class="login-brand-text"><strong>CloudLedger</strong><small>云账科技</small></span>
+        </a>
 
-    <main class="login-main">
-      <div class="login-card">
-        <h2>登录工作台</h2>
-        <p class="sub">使用演示账号登录，或输入管理员分配的账号。</p>
+        <div class="login-copy">
+          <span class="login-eyebrow">云账科技 · 企业财税支持中心</span>
+          <h1 id="product-title">让每一次财税咨询与<br>异常处理，都有据可查</h1>
+          <p class="login-intro">面向企业员工与财务团队的一站式支持平台。随时查询数电发票、差旅报销与预算规则，遇到复杂异常一键转交专属财务顾问跟进解决。</p>
 
-        <div id="login-error" class="alert error hidden"></div>
+          <div class="login-divider" aria-hidden="true"></div>
 
-        <form id="login-form">
-          <div class="field">
-            <label for="username">用户名</label>
-            <input class="input" id="username" name="username" autocomplete="username" required maxlength="64" placeholder="例如 customer_a" />
-          </div>
-          <div class="field">
-            <label for="password">密码</label>
-            <input class="input" id="password" name="password" type="password" autocomplete="current-password" required maxlength="128" placeholder="请输入密码" />
-          </div>
-          <button class="btn" id="login-btn" type="submit">登录</button>
-        </form>
-
-        <div class="demo-accounts">
-          <h3>演示账号（仅本地演示，点击自动填入）</h3>
-          <div class="demo-grid" id="demo-grid"></div>
+          <ul class="login-benefits">
+            <li>
+              <span class="benefit-icon" aria-hidden="true">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"/></svg>
+              </span>
+              <div><b>制度规则随时查</b><span>涵盖开票规范、费用报销与各版本操作指南，回答附带对应政策原文。</span></div>
+            </li>
+            <li>
+              <span class="benefit-icon" aria-hidden="true">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+              </span>
+              <div><b>专属顾问在线跟进</b><span>遇到打款退票、预算异常或月结问题，可直接在对话中转交顾问处理并追踪进度。</span></div>
+            </li>
+            <li>
+              <span class="benefit-icon" aria-hidden="true">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+              </span>
+              <div><b>企业信息独立守护</b><span>各企业内部制度与处理记录严格隔离，仅本企业授权人员可见，保障财务数据安全。</span></div>
+            </li>
+          </ul>
         </div>
-      </div>
-    </main>
+
+        <footer class="login-side-foot">CloudLedger · 企业财税费控智能支持平台</footer>
+      </section>
+
+      <main class="login-panel-col">
+        <div class="login-card">
+          <div class="login-card-head">
+            <h2>账号登录</h2>
+            <p class="sub">使用企业分配的账号密码进入工作台</p>
+          </div>
+
+          <div id="login-error" class="alert error hidden" role="alert"></div>
+
+          <form id="login-form">
+            <div class="field">
+              <label for="username">用户名</label>
+              <input class="input" id="username" name="username" autocomplete="username" required maxlength="64" placeholder="请输入用户名" />
+            </div>
+            <div class="field">
+              <label for="password">密码</label>
+              <div class="login-password">
+                <input class="input" id="password" name="password" type="password" autocomplete="current-password" required maxlength="128" placeholder="请输入密码" />
+                <button type="button" class="password-toggle" id="password-toggle" aria-controls="password">显示密码</button>
+              </div>
+            </div>
+            <button class="btn login-submit" id="login-btn" type="submit">登录</button>
+          </form>
+
+          <div class="demo-accounts">
+            <div class="demo-accounts-head">
+              <h3>快速体验账号</h3>
+              <span class="demo-pill">点击自动填入</span>
+            </div>
+            <div class="demo-grid" id="demo-grid"></div>
+          </div>
+        </div>
+      </main>
+    </div>
   </div>
 
-  <script src="/assets/common.js"></script>
+  <script src="/assets/common.js?v=20261128-login-v4"></script>
   <script>
     // 登录页：提交账号密码，成功后将 Token 与用户信息写入 localStorage。
     const existingUser = getUser();
@@ -62,19 +94,34 @@
     const form = el("login-form");
     const errorBox = el("login-error");
     const loginBtn = el("login-btn");
+    const password = el("password");
+    const passwordToggle = el("password-toggle");
+
+    passwordToggle.addEventListener("click", function () {
+      const show = password.type === "password";
+      password.type = show ? "text" : "password";
+      passwordToggle.textContent = show ? "隐藏密码" : "显示密码";
+    });
 
     const grid = el("demo-grid");
     grid.innerHTML = DEMO_ACCOUNTS.map(function (item) {
       return '<button type="button" class="demo-chip" data-username="' + escapeHtml(item.username) +
         '" data-password="' + escapeHtml(item.password) + '"><b>' + escapeHtml(item.label) +
-        "</b>" + escapeHtml(item.username) + "</button>";
+        '</b><span class="mono">' + escapeHtml(item.username) + "</span></button>";
     }).join("");
     grid.addEventListener("click", function (event) {
       const chip = event.target.closest(".demo-chip");
       if (!chip) return;
+      grid.querySelectorAll(".demo-chip.is-selected").forEach(function (node) {
+        node.classList.remove("is-selected");
+      });
+      chip.classList.add("is-selected");
       el("username").value = chip.dataset.username;
-      el("password").value = chip.dataset.password;
-      el("password").focus();
+      password.type = "password";
+      passwordToggle.textContent = "显示密码";
+      password.value = chip.dataset.password;
+      errorBox.classList.add("hidden");
+      loginBtn.focus();
     });
 
     form.addEventListener("submit", async function (event) {
@@ -86,7 +133,7 @@
         const data = await api("/auth/login", {
           method: "POST",
           skipAuthRedirect: true,
-          body: { username: el("username").value.trim(), password: el("password").value },
+          body: { username: el("username").value.trim(), password: password.value },
         });
         saveAuth(data);
         location.href = homeFor(data.role);
